@@ -1,11 +1,3 @@
-﻿// @xuanlam2007
-// Tool tự động đăng ký học phần HANU (qldt.hanu.edu.vn)
-// Yêu cầu: Node.js 18+ (có fetch built-in)
-//
-// Cách chạy CLI:
-//   1. Tạo file .env cùng thư mục (xem mẫu .env.example)
-//   2. node register.js
-
 import 'dotenv/config';
 import { fileURLToPath } from 'url';
 
@@ -58,7 +50,7 @@ export async function tryRegister(config, idToHoc, idRs) {
     headers: {
       accept: 'application/json, text/plain, */*',
       'content-type': 'application/json',
-                  'Authorization': ACCESS_TOKEN ? `Bearer ${ACCESS_TOKEN}` : '',
+      'Authorization': ACCESS_TOKEN ? `Bearer ${ACCESS_TOKEN}` : '',
       cookie: COOKIE,
       origin: 'https://qldt.hanu.edu.vn',
       referer: 'https://qldt.hanu.edu.vn/dkmh/',
@@ -73,7 +65,7 @@ export async function tryRegister(config, idToHoc, idRs) {
   return res.json();
 }
 
-export async function registerCourses(options, callbacks = {}) {
+export async function registerCourses(options, callbacks = {}, controller = { cancelled: false }) {
   validateOptions(options);
 
   const {
@@ -99,7 +91,21 @@ export async function registerCourses(options, callbacks = {}) {
 
   let attempt = 0;
   while (pendingCourses.size > 0 && attempt < maxAttempts) {
+    if (controller && controller.cancelled) {
+      onLog('⚠️ Tiến trình đăng ký đã bị dừng bởi người dùng.');
+      const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+      onDone(result);
+      return result;
+    }
+
     for (const [idToHoc, name] of [...pendingCourses.entries()]) {
+      if (controller && controller.cancelled) {
+        onLog('⚠️ Tiến trình đăng ký đã bị dừng bởi người dùng.');
+        const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+        onDone(result);
+        return result;
+      }
+
       attempt += 1;
       if (attempt > maxAttempts) break;
 

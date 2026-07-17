@@ -1,7 +1,7 @@
 ﻿import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { registerCourses } from './register.js';
+import { registerCourses } from './register_fixed.js';
 import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -120,6 +120,8 @@ ipcMain.handle('auth:login', async (event, credentials) => {
   const decoded = Buffer.from(currUserBase64, 'base64url').toString('utf8');
   const parsed = JSON.parse(decoded);
   const accessToken = parsed.access_token || parsed.accessToken || '';
+  // Thử truy xuất các key khả dụng chứa id_rs từ payload CurrUser
+  const idRsInit = parsed.id_rs || parsed.idRs || parsed.id_rs_init || parsed.rs || parsed.rs_id || parsed.idRsInit || null;
 
   const cookieValues = [];
   response.headers.forEach((value, name) => {
@@ -136,6 +138,7 @@ ipcMain.handle('auth:login', async (event, credentials) => {
     success: true,
     accessToken,
     cookie,
+    idRsInit,
     message: cookie
       ? 'Đăng nhập thành công. Access token và cookie được tự động điền nếu có.'
       : 'Đăng nhập thành công. Access token được điền tự động. Nếu cần, hãy copy COOKIE thủ công từ trình duyệt.',
@@ -150,6 +153,16 @@ ipcMain.handle('register:start', async (event, options) => {
 
   try {
     sendLog('Bắt đầu tiến trình đăng ký…');
+
+    // Ghi log trạng thái (không ghi giá trị token/cookie đầy đủ - for safety purposes iykyk)
+    const presence = {
+      hasAccessToken: !!options.ACCESS_TOKEN,
+      hasCookie: !!options.COOKIE,
+      hasCourses: !!options.COURSES,
+      hasIdRsInit: !!options.ID_RS_INIT,
+    };
+    sendLog(`Trạng thái cấu hình: ACCESS_TOKEN=${presence.hasAccessToken ? 'YES' : 'NO'}, COOKIE=${presence.hasCookie ? 'YES' : 'NO'}, COURSES=${presence.hasCourses ? 'YES' : 'NO'}, ID_RS_INIT=${presence.hasIdRsInit ? 'YES' : 'NO'}`);
+
     const result = await registerCourses(options, {
       onLog: (message) => sendLog(message, 'info'),
       onError: (message) => sendLog(message, 'error'),

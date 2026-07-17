@@ -276,8 +276,8 @@ startButton.addEventListener('click', async () => {
     return;
   }
 
-  if (!options.ACCESS_TOKEN || !options.COOKIE || !options.ID_RS_INIT) {
-    appendLog('Vui lòng điền đầy đủ ACCESS_TOKEN, COOKIE và ID_RS_INIT trong tab Thông tin đăng ký.', 'error');
+  if (!options.ACCESS_TOKEN || !options.COOKIE) {
+    appendLog('Vui lòng điền đầy đủ ACCESS_TOKEN và COOKIE trong tab Thông tin đăng ký. ID_RS_INIT có thể để trống (sẽ được lấy tự động khi server trả về).', 'error');
     updateStatus('Lỗi: thiếu thông tin cấu hình.', 'error');
     return;
   }
@@ -323,6 +323,11 @@ loginButton.addEventListener('click', async () => {
       }
       if (result.cookie) {
         cookieInput.value = result.cookie;
+      }
+      // Nếu main process trả về idRsInit từ payload CurrUser thì tự động điền
+      if (result.idRsInit) {
+        idRsInitInput.value = result.idRsInit;
+        appendLoginHint('ID_RS_INIT đã được tự động điền từ thông tin đăng nhập.');
       }
       setActiveTab('config');
     } else {
