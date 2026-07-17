@@ -1,0 +1,404 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto DKMH GUI</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f7fa;
+      color: #172b4d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px 24px 24px;
+    }
+
+    header {
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+
+    p.subtitle {
+      margin: 8px 0 0;
+      color: #536178;
+      font-size: 14px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin: 24px 0 16px;
+    }
+
+    .tab-button {
+      border: 1px solid #d8e2ef;
+      background: white;
+      color: #172b4d;
+      border-radius: 10px;
+      padding: 12px 18px;
+      cursor: pointer;
+      flex: 1;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+
+    .tab-button.active {
+      background: #0f62fe;
+      color: white;
+      border-color: #0f62fe;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .panel-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .panel-card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid #d8e2ef;
+      padding: 18px;
+      box-shadow: 0 4px 16px rgba(6, 24, 44, 0.08);
+    }
+
+    .field-group {
+      display: grid;
+      gap: 16px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 13px;
+      color: #344563;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid #d8e2ef;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: #102a43;
+      background: white;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button.primary {
+      background: #0f62fe;
+      color: white;
+      box-shadow: 0 12px 24px rgba(15, 98, 254, 0.16);
+    }
+
+    button.secondary {
+      background: #f4f7fc;
+      color: #102a43;
+    }
+
+    button.danger {
+      background: #d92d20;
+      color: white;
+    }
+
+    .status-bar {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: #102a43;
+    }
+
+    .status-bar .status {
+      font-size: 14px;
+    }
+
+    .status-bar .summary {
+      color: #525f7f;
+      font-size: 14px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 18px;
+      border: 1px solid #d8e2ef;
+      border-radius: 14px;
+      background: white;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1000px;
+    }
+
+    thead th {
+      padding: 14px 12px;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1d2939;
+      border-bottom: 1px solid #e9eff6;
+      background: #f8fafc;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tbody td {
+      padding: 14px 12px;
+      vertical-align: top;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+      color: #252f40;
+    }
+
+    tbody tr:hover {
+      background: #f0f5ff;
+    }
+
+    .checkbox-cell {
+      width: 40px;
+    }
+
+    .small-text {
+      color: #5f6c8b;
+      font-size: 13px;
+    }
+
+    .log-panel {
+      background: #111827;
+      color: #e2e8f0;
+      padding: 16px;
+      min-height: 260px;
+      border-radius: 16px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      white-space: pre-wrap;
+      border: 1px solid #1f2937;
+    }
+
+    .log-panel .error {
+      color: #f87171;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Auto DKMH GUI</h1>
+      <p class="subtitle">Tìm học phần, chọn các nhóm muốn tự động đăng ký và cấu hình thông tin đăng nhập.</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-button active" data-tab="search">Tìm môn học</button>
+      <button class="tab-button" data-tab="login">Đăng nhập</button>
+      <button class="tab-button" data-tab="config">Thông tin đăng ký</button>
+    </div>
+
+    <div id="search" class="tab-panel active">
+      <div class="panel-card">
+        <div class="field-group">
+          <div class="field">
+            <label for="filterCode">Mã MH</label>
+            <input id="filterCode" type="text" placeholder="Tìm theo mã môn học" />
+          </div>
+          <div class="field">
+            <label for="filterName">Tên môn học</label>
+            <input id="filterName" type="text" placeholder="Tìm theo tên môn học" />
+          </div>
+          <div class="field">
+            <label for="filterGroup">Nhóm</label>
+            <input id="filterGroup" type="text" placeholder="Tìm theo nhóm" />
+          </div>
+          <div class="field">
+            <label for="filterClass">Lớp</label>
+            <input id="filterClass" type="text" placeholder="Tìm theo lớp" />
+          </div>
+        </div>
+
+        <div class="button-row" style="margin-top: 18px;">
+          <button class="primary" id="resetFiltersButton">Reset bộ lọc</button>
+          <button class="secondary" id="selectAllButton">Chọn tất cả trang này</button>
+          <button class="secondary" id="deselectAllButton">Bỏ chọn tất cả</button>
+        </div>
+      </div>
+
+      <div class="status-bar">
+        <div class="status" id="tableStatus">Đang tải dữ liệu học phần...</div>
+        <div class="summary" id="selectionSummary">Đã chọn 0 học phần.</div>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="coursesTable">
+          <thead>
+            <tr>
+              <th class="checkbox-cell"><input type="checkbox" id="headSelectAll" /></th>
+              <th>Mã MH</th>
+              <th>Tên môn học</th>
+              <th>Nhóm</th>
+              <th>Tổ</th>
+              <th>Số TC</th>
+              <th>Lớp</th>
+              <th>Số lượng</th>
+              <th>Còn lại</th>
+              <th>Thời khóa biểu</th>
+            </tr>
+          </thead>
+          <tbody id="coursesTableBody">
+            <tr><td colspan="10" class="small-text">Vui lòng chờ dữ liệu hoặc điều chỉnh bộ lọc.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="login" class="tab-panel">
+      <div class="panel-card">
+        <div class="field-group">
+          <div class="field">
+            <label for="usernameInput">Tài khoản</label>
+            <input id="usernameInput" type="text" placeholder="Nhập mã SV hoặc tài khoản" />
+          </div>
+          <div class="field">
+            <label for="passwordInput">Mật khẩu</label>
+            <input id="passwordInput" type="password" placeholder="Nhập mật khẩu" />
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="primary" id="loginButton">Đăng nhập</button>
+        </div>
+
+        <div class="status-bar">
+          <div class="status" id="loginStatus">Nhập thông tin tài khoản và nhấn Đăng nhập.</div>
+          <div class="summary" id="loginHint">Sau khi đăng nhập thành công, access token sẽ được điền tự động vào tab Thông tin đăng ký.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="config" class="tab-panel">
+      <div class="panel-row">
+        <div class="panel-card">
+          <div class="field-group">
+            <div class="field">
+              <label for="accessToken">ACCESS_TOKEN</label>
+              <textarea id="accessToken" placeholder="Copy giá trị token (không kèm Bearer)"></textarea>
+            </div>
+            <div class="field">
+              <label for="cookie">COOKIE</label>
+              <textarea id="cookie" placeholder="Copy toàn bộ chuỗi cookie từ DevTools"></textarea>
+            </div>
+            <div class="field">
+              <label for="coursesPreview">Danh sách học phần đã chọn</label>
+              <textarea id="coursesPreview" readonly placeholder="Các học phần sẽ được cập nhật sau khi chọn ở tab Tìm môn học"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="field-group">
+            <div class="field">
+              <label for="svNganh">SV_NGANH</label>
+              <input id="svNganh" type="text" value="1" />
+            </div>
+            <div class="field">
+              <label for="idRsInit">ID_RS_INIT</label>
+              <input id="idRsInit" type="text" placeholder="id_rs ban đầu" />
+            </div>
+            <div class="field">
+              <label for="retryInterval">RETRY_INTERVAL_MS</label>
+              <input id="retryInterval" type="number" value="1500" />
+            </div>
+            <div class="field">
+              <label for="maxAttempts">MAX_ATTEMPTS</label>
+              <input id="maxAttempts" type="number" value="500" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button class="primary" id="startButton">Bắt đầu đăng ký</button>
+        <button class="secondary" id="clearLogsButton">Xóa log</button>
+      </div>
+
+      <div class="status-bar">
+        <div class="status" id="runStatus">Chưa chạy.</div>
+        <div class="summary" id="previewSummary">Chưa có học phần nào được chọn.</div>
+      </div>
+
+      <div class="log-panel" id="logArea"></div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
