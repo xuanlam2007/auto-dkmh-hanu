@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   startRegistration: (options) => ipcRenderer.invoke('register:start', options),
+  pauseRegistration: () => ipcRenderer.invoke('register:pause'),
+  resumeRegistration: () => ipcRenderer.invoke('register:resume'),
+  cancelRegistration: () => ipcRenderer.invoke('register:stop'),
   loadCourseData: () => ipcRenderer.invoke('courses:load'),
   performLogin: (credentials) => ipcRenderer.invoke('auth:login', credentials),
   onLog: (callback) => ipcRenderer.on('register:log', (event, payload) => callback(payload)),

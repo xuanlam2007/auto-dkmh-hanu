@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow;
 let courseData = null;
+let currentController = null;
 
 async function preloadCourseData() {
   const coursePath = path.join(__dirname, 'data', 'w-dslocnhomto.json');
@@ -163,17 +164,53 @@ ipcMain.handle('register:start', async (event, options) => {
     };
     sendLog(`Trạng thái cấu hình: ACCESS_TOKEN=${presence.hasAccessToken ? 'YES' : 'NO'}, COOKIE=${presence.hasCookie ? 'YES' : 'NO'}, COURSES=${presence.hasCourses ? 'YES' : 'NO'}, ID_RS_INIT=${presence.hasIdRsInit ? 'YES' : 'NO'}`);
 
+    // Create controller for pause / resume / cancel
+    const controller = { cancelled: false, paused: false, resume: null };
+    currentController = controller;
+
     const result = await registerCourses(options, {
       onLog: (message) => sendLog(message, 'info'),
       onError: (message) => sendLog(message, 'error'),
       onDone: (result) => sender.send('register:done', result),
-    });
+    }, controller);
 
     return result;
   } catch (error) {
     sendLog(`Lỗi không mong đợi: ${error.message}`, 'error');
     throw error;
+  } finally {
+    currentController = null;
   }
+});
+
+// Pause / resume / stop handlers
+ipcMain.handle('register:pause', async () => {
+  if (!currentController) return { ok: false, error: 'No active registration' };
+  currentController.paused = true;
+  if (mainWindow) mainWindow.webContents.send('register:log', { message: '⏸️ Tiến trình đăng ký đã được tạm dừng bởi người dùng.' });
+  return { ok: true };
+});
+
+ipcMain.handle('register:resume', async () => {
+  if (!currentController) return { ok: false, error: 'No active registration' };
+  currentController.paused = false;
+  if (currentController.resume) {
+    try { currentController.resume(); } catch (e) { /* ignore */ }
+    currentController.resume = null;
+  }
+  if (mainWindow) mainWindow.webContents.send('register:log', { message: '▶️ Tiến trình đăng ký tiếp tục.' });
+  return { ok: true };
+});
+
+ipcMain.handle('register:stop', async () => {
+  if (!currentController) return { ok: false, error: 'No active registration' };
+  currentController.cancelled = true;
+  if (currentController.resume) {
+    try { currentController.resume(); } catch (e) { /* ignore */ }
+    currentController.resume = null;
+  }
+  if (mainWindow) mainWindow.webContents.send('register:log', { message: '🛑 Tiến trình đăng ký đã bị huỷ bởi người dùng.' });
+  return { ok: true };
 });
 
 app.on('window-all-closed', () => {

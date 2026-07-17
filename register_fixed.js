@@ -65,7 +65,7 @@ export async function tryRegister(config, idToHoc, idRs) {
   return res.json();
 }
 
-export async function registerCourses(options, callbacks = {}, controller = { cancelled: false }) {
+export async function registerCourses(options, callbacks = {}, controller = null) {
   validateOptions(options);
 
   const {
@@ -82,6 +82,8 @@ export async function registerCourses(options, callbacks = {}, controller = { ca
   const onError = callbacks.onError || (() => {});
   const onDone = callbacks.onDone || (() => {});
 
+  controller = controller || { cancelled: false, paused: false, resume: null };
+
   const pendingCourses = parseCourses(COURSES);
   let idRs = ID_RS_INIT;
   const maxAttempts = Number(MAX_ATTEMPTS);
@@ -91,11 +93,19 @@ export async function registerCourses(options, callbacks = {}, controller = { ca
 
   let attempt = 0;
   while (pendingCourses.size > 0 && attempt < maxAttempts) {
-    if (controller && controller.cancelled) {
-      onLog('⚠️ Tiến trình đăng ký đã bị dừng bởi người dùng.');
-      const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
-      onDone(result);
-      return result;
+    // Nếu đang bị tạm dừng, chờ resume hoặc stop
+    if (controller && controller.paused) {
+      onLog('⏸️ Tiến trình đăng ký đang tạm dừng. Chờ lệnh tiếp tục hoặc huỷ...');
+      await new Promise((resolve) => {
+        controller.resume = resolve;
+      });
+      controller.resume = null;
+      if (controller.cancelled) {
+        onLog('⚠️ Tiến trình đăng ký đã bị huỷ trong khi tạm dừng.');
+        const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+        onDone(result);
+        return result;
+      }
     }
 
     for (const [idToHoc, name] of [...pendingCourses.entries()]) {
@@ -104,6 +114,21 @@ export async function registerCourses(options, callbacks = {}, controller = { ca
         const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
         onDone(result);
         return result;
+      }
+
+      // Kiểm tra tạm dừng ngay trước khi xử lý mỗi môn
+      if (controller && controller.paused) {
+        onLog('⏸️ Tiến trình đăng ký đang tạm dừng trước khi xử lý môn: ' + name);
+        await new Promise((resolve) => {
+          controller.resume = resolve;
+        });
+        controller.resume = null;
+        if (controller.cancelled) {
+          onLog('⚠️ Tiến trình đăng ký đã bị huỷ trong khi tạm dừng.');
+          const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+          onDone(result);
+          return result;
+        }
       }
 
       attempt += 1;

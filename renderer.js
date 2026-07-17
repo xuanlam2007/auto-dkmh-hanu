@@ -21,6 +21,8 @@ const idRsInitInput = document.getElementById('idRsInit');
 const retryIntervalInput = document.getElementById('retryInterval');
 const maxAttemptsInput = document.getElementById('maxAttempts');
 const startButton = document.getElementById('startButton');
+const pauseButton = document.getElementById('pauseButton');
+const cancelButton = document.getElementById('cancelButton');
 const clearLogsButton = document.getElementById('clearLogsButton');
 const logArea = document.getElementById('logArea');
 const usernameInput = document.getElementById('usernameInput');
@@ -287,6 +289,14 @@ startButton.addEventListener('click', async () => {
   updateStatus('Đang chạy...', 'info');
   startButton.disabled = true;
   startButton.textContent = 'Đang chạy...';
+  if (pauseButton) {
+    pauseButton.disabled = false;
+    pauseButton.dataset.paused = 'no';
+    pauseButton.textContent = 'Tạm dừng';
+  }
+  if (cancelButton) {
+    cancelButton.disabled = false;
+  }
 
   try {
     await window.electronAPI.startRegistration(options);
@@ -295,6 +305,14 @@ startButton.addEventListener('click', async () => {
     updateStatus('Lỗi khi chạy.', 'error');
     startButton.disabled = false;
     startButton.textContent = 'Bắt đầu đăng ký';
+    if (pauseButton) {
+      pauseButton.disabled = true;
+      pauseButton.dataset.paused = 'no';
+      pauseButton.textContent = 'Tạm dừng';
+    }
+    if (cancelButton) {
+      cancelButton.disabled = true;
+    }
   }
 });
 
@@ -348,6 +366,49 @@ clearLogsButton.addEventListener('click', () => {
   updateStatus('Logs đã được xóa.', 'info');
 });
 
+if (pauseButton) {
+  pauseButton.addEventListener('click', async () => {
+    if (!window.electronAPI) return;
+    const isPaused = pauseButton.dataset.paused === 'yes';
+    try {
+      if (isPaused) {
+        await window.electronAPI.resumeRegistration();
+        pauseButton.dataset.paused = 'no';
+        pauseButton.textContent = 'Tạm dừng';
+        appendLog('▶️ Tiếp tục chạy đăng ký.');
+      } else {
+        await window.electronAPI.pauseRegistration();
+        pauseButton.dataset.paused = 'yes';
+        pauseButton.textContent = 'Tiếp tục';
+        appendLog('⏸️ Đã tạm dừng đăng ký.');
+      }
+    } catch (err) {
+      appendLog('Lỗi khi gửi yêu cầu tạm dừng/tiếp tục: ' + (err.message || err), 'error');
+    }
+  });
+}
+
+if (cancelButton) {
+  cancelButton.addEventListener('click', async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.cancelRegistration();
+      appendLog('🛑 Đã gửi yêu cầu huỷ tiến trình đăng ký.');
+      updateStatus('Đã huỷ', 'error');
+      startButton.disabled = false;
+      startButton.textContent = 'Bắt đầu đăng ký';
+      if (pauseButton) {
+        pauseButton.disabled = true;
+        pauseButton.dataset.paused = 'no';
+        pauseButton.textContent = 'Tạm dừng';
+      }
+      cancelButton.disabled = true;
+    } catch (err) {
+      appendLog('Lỗi khi huỷ: ' + (err.message || err), 'error');
+    }
+  });
+}
+
 if (window.electronAPI) {
   if (typeof window.electronAPI.onLog === 'function') {
     window.electronAPI.onLog(({ message, type }) => {
@@ -365,6 +426,14 @@ if (window.electronAPI) {
       updateStatus(result.success ? 'Hoàn tất' : 'Kết thúc với lỗi', result.success ? 'info' : 'error');
       startButton.disabled = false;
       startButton.textContent = 'Bắt đầu đăng ký';
+      if (pauseButton) {
+        pauseButton.disabled = true;
+        pauseButton.dataset.paused = 'no';
+        pauseButton.textContent = 'Tạm dừng';
+      }
+      if (cancelButton) {
+        cancelButton.disabled = true;
+      }
     });
   }
 }
