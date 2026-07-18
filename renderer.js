@@ -129,7 +129,7 @@ function renderTable() {
       <td>${row.he_dao_tao || ''}</td>
       <td>${row.ten_mon || row.ten_mon_eg || row.ten || ''}</td>
       <td>${row.nhom_to}</td>
-      <td>${row.to || '*'}</td>
+      <td>${row.to ?? ''}</td>
       <td>${row.so_tc}</td>
       <td>${row.lop}</td>
       <td>${row.sl_cp}</td>
