@@ -1,6 +1,7 @@
 ﻿const tabButtons = Array.from(document.querySelectorAll('.tab-button'));
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 const filterCode = document.getElementById('filterCode');
+const filterHe = document.getElementById('filterHe');
 const filterName = document.getElementById('filterName');
 const filterGroup = document.getElementById('filterGroup');
 const filterClass = document.getElementById('filterClass');
@@ -60,6 +61,7 @@ function normalizeSearchText(value) {
 function getCurrentFilters() {
   return {
     code: normalizeSearchText(filterCode.value),
+    he: filterHe.value, // so khớp chính xác 2 số hệ, không cần normalize
     name: normalizeSearchText(filterName.value),
     group: normalizeSearchText(filterGroup.value),
     class: normalizeSearchText(filterClass.value),
@@ -72,6 +74,9 @@ function textMatches(value, needle) {
 
 function filterRow(row, filters) {
   if (filters.code && !textMatches(row.ma_mon, filters.code)) {
+    return false;
+  }
+  if (filters.he && String(row.ma_mon || '').slice(0, 2) !== filters.he) {
     return false;
   }
   if (filters.name && !textMatches(row.ten_mon, filters.name)) {
@@ -99,7 +104,7 @@ function renderTable() {
   coursesTableBody.innerHTML = '';
 
   if (!loaded) {
-    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Đang tải dữ liệu học phần...</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Đang tải dữ liệu học phần...</td></tr>';
     tableStatus.textContent = 'Đang tải dữ liệu học phần...';
     headSelectAll.checked = false;
     headSelectAll.indeterminate = false;
@@ -107,7 +112,7 @@ function renderTable() {
   }
 
   if (visibleRows.length === 0) {
-    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Không tìm thấy học phần phù hợp.</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Không tìm thấy học phần phù hợp.</td></tr>';
     tableStatus.textContent = 'Không tìm thấy học phần phù hợp.';
     headSelectAll.checked = false;
     headSelectAll.indeterminate = false;
@@ -121,6 +126,7 @@ function renderTable() {
     tr.innerHTML = `
       <td class="checkbox-cell"><input type="checkbox" data-id="${row.id_to_hoc}" ${checked ? 'checked' : ''} /></td>
       <td>${row.ma_mon}</td>
+      <td>${row.he_dao_tao || ''}</td>
       <td>${row.ten_mon || row.ten_mon_eg || row.ten || ''}</td>
       <td>${row.nhom_to}</td>
       <td>${row.to || '*'}</td>
@@ -201,10 +207,44 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
     });
   }
 
+  // Mệt quá TT
+  // Sau khi vọc vạch và lần mò trên mạng thì ta rút ra được là:
+  // Mã môn HANU có dạng "<2 số hệ><mã gốc>", VD: 61FIT2CAL / 62FIT2CAL / 66FIT2CAL
+  // mặc dù đều là "Toán cao cấp" nhưng khác hệ đào tạo. Bảng ds_mon_hoc dường như
+  // chỉ chứa tên cho các mã thuộc hệ của **sinh viên đang đăng nhập**, nên các môn
+  // học thuộc hệ khác bị thiếu tên tiếng Việt => rơi về tên tiếng Anh. 
+  // 
+  // Tạo thêm 1 bảng tra theo "mã gốc" (bỏ 2 ký tự hệ đầu)
+  const suffixNameMap = {};
+  Object.entries(nameMap).forEach(([ma, ten]) => {
+    const suffix = ma.slice(2);
+    if (suffix && !suffixNameMap[suffix]) {
+      suffixNameMap[suffix] = ten;
+    }
+  });
+
+  // 2 số đầu mã môn tại HANU thể hiện hệ đào tạo: 
+  // 61 = Đại trà
+  // 62 = CLC (Chất lượng cao)
+  // 66 = TT (Tiên tiến)
+  // Nếu tồn tại các mã khác chưa xác định rõ thì chỉ
+  // hiển thị nguyên số hệ, không đoán tên nữa.
+  const HE_DAO_TAO_MAP = { '61': 'Đại trà', '62': 'CLC', '66': 'Tiên tiến' };
+  function getHeDaoTao(maMon) {
+    const prefix = String(maMon || '').slice(0, 2);
+    return HE_DAO_TAO_MAP[prefix] || prefix;
+  }
+
   courseRows = Array.isArray(data.ds_nhom_to)
     ? data.ds_nhom_to.map((item) => ({
         ...item,
-        ten_mon: item.ten_mon || nameMap[item.ma_mon] || item.ten_mon_eg || item.ma_mon || '',
+        ten_mon: item.ten_mon
+          || nameMap[item.ma_mon]
+          || suffixNameMap[item.ma_mon.slice(2)]
+          || item.ten_mon_eg
+          || item.ma_mon
+          || '',
+        he_dao_tao: getHeDaoTao(item.ma_mon),
       }))
     : [];
 
@@ -252,11 +292,11 @@ async function loadInitialCourses() {
       throw new Error('Preload bridge chưa sẵn sàng.');
     }
     const data = await window.electronAPI.loadCourseData();
-    applyCourseData(data, 'dữ liệu mẫu — hãy đăng nhập để lấy dữ liệu thật mới nhất', { showBanner: false });
+    applyCourseData(data, 'dữ liệu mẫu | Hãy đăng nhập để lấy dữ liệu thật mới nhất', { showBanner: false });
   } catch (error) {
     loaded = false;
     tableStatus.textContent = 'Không thể tải dữ liệu học phần.';
-    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Lỗi khi tải dữ liệu mẫu. Kiểm tra thư mục data-example hoặc console.</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Lỗi khi tải dữ liệu mẫu. Kiểm tra thư mục data-example hoặc console.</td></tr>';
     appendLog(`Lỗi load dữ liệu mẫu: ${error.message}`, 'error');
     console.error(error);
   }
@@ -280,7 +320,7 @@ async function refreshCoursesFromApi(credentials, { silent = false } = {}) {
     } else {
       appendLog(`⚠️ Không tải được danh sách môn học mới: ${result.error || 'lỗi không xác định'}. Vẫn giữ dữ liệu hiện có.`, 'error');
       if (result.data) {
-        applyCourseData(result.data, 'dữ liệu cũ — refresh thất bại');
+        applyCourseData(result.data, 'dữ liệu cũ | Refresh thất bại');
       }
     }
   } catch (error) {
@@ -290,6 +330,7 @@ async function refreshCoursesFromApi(credentials, { silent = false } = {}) {
 
 function resetFilters() {
   filterCode.value = '';
+  filterHe.value = '';
   filterName.value = '';
   filterGroup.value = '';
   filterClass.value = '';
@@ -297,6 +338,7 @@ function resetFilters() {
 }
 
 filterCode.addEventListener('input', renderTable);
+filterHe.addEventListener('change', renderTable);
 filterName.addEventListener('input', renderTable);
 filterGroup.addEventListener('input', renderTable);
 filterClass.addEventListener('input', renderTable);
