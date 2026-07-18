@@ -7,15 +7,53 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const COURSES_LIST_URL = 'https://qldt.hanu.edu.vn/public/api/dkmh/w-locdsnhomto';
+
 let mainWindow;
 let courseData = null;
 let currentController = null;
 
-async function preloadCourseData() {
-  const coursePath = path.join(__dirname, 'data', 'w-dslocnhomto.json');
+// Dữ liệu mẫu (data-example) chỉ dùng để hiển thị tạm khi CHƯA đăng nhập,
+// hoặc khi việc fetch trực tiếp từ API bị lỗi. Sau khi đăng nhập thành công,
+// dữ liệu thật sẽ được lấy trực tiếp từ API và ghi đè lên đây.
+async function loadExampleCourseData() {
+  const coursePath = path.join(__dirname, 'data-example', 'w-dslocnhomto.json');
   const content = await fs.promises.readFile(coursePath, 'utf8');
   const json = JSON.parse(content);
-  courseData = json.data || {};
+  return json.data || {};
+}
+
+// Gọi thẳng API để lấy danh sách môn/tổ học mới nhất
+async function fetchCourseDataFromApi({ ACCESS_TOKEN, COOKIE } = {}) {
+  const res = await fetch(COURSES_LIST_URL, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/json',
+      ...(ACCESS_TOKEN ? { Authorization: `Bearer ${ACCESS_TOKEN}` } : {}),
+      ...(COOKIE ? { cookie: COOKIE } : {}),
+      origin: 'https://qldt.hanu.edu.vn',
+      referer: 'https://qldt.hanu.edu.vn/public/',
+    },
+    body: JSON.stringify({
+      is_CVHT: false,
+      additional: {
+        paging: { limit: 99999, page: 1 },
+        ordering: [{ name: '', order_type: '' }],
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Server trả về lỗi HTTP ${res.status} khi tải danh sách môn học.`);
+  }
+
+  const json = await res.json();
+  if (!json || !json.data) {
+    throw new Error('Response không đúng định dạng mong đợi (thiếu "data").');
+  }
+
+  return json.data;
 }
 
 function createWindow() {
@@ -35,9 +73,10 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    await preloadCourseData();
+    // Chỉ dùng dữ liệu mẫu để hiển thị trước khi đăng nhập.
+    courseData = await loadExampleCourseData();
   } catch (error) {
-    console.error('Không thể tải dữ liệu môn học trước khi hiển thị UI:', error);
+    console.error('Không thể tải dữ liệu mẫu (data-example) để hiển thị ban đầu:', error);
   }
 
   createWindow();
@@ -53,11 +92,26 @@ ipcMain.handle('courses:load', async () => {
   if (courseData) {
     return courseData;
   }
+  return loadExampleCourseData();
+});
 
-  const coursePath = path.join(__dirname, 'data', 'w-dslocnhomto.json');
-  const content = await fs.promises.readFile(coursePath, 'utf8');
-  const json = JSON.parse(content);
-  return json.data || {};
+// Handler: làm mới danh sách môn học trực tiếp từ API thật.
+// Renderer gọi sau khi đăng nhập thành công (gọi lại
+// bất cứ lúc nào để cập nhật slot).
+ipcMain.handle('courses:refresh', async (event, credentials) => {
+  try {
+    const fresh = await fetchCourseDataFromApi(credentials || {});
+    courseData = fresh;
+    return { success: true, data: fresh, fromLiveApi: true };
+  } catch (error) {
+    console.error('Lỗi khi fetch danh sách môn học từ API:', error);
+    return {
+      success: false,
+      error: error.message || 'Lỗi không xác định khi tải danh sách môn học.',
+      data: courseData,
+      fromLiveApi: false,
+    };
+  }
 });
 
 function extractCurrUser(codeLocation) {
@@ -135,11 +189,24 @@ ipcMain.handle('auth:login', async (event, credentials) => {
     ? cookieValues.map((value) => value.split(';')[0]).join('; ')
     : '';
 
+  // Tự động lấy danh sách môn học mới nhất ngay sau khi đăng nhập thành công
+  let freshCourseData = null;
+  let courseFetchError = null;
+  try {
+    freshCourseData = await fetchCourseDataFromApi({ ACCESS_TOKEN: accessToken, COOKIE: cookie });
+    courseData = freshCourseData;
+  } catch (err) {
+    courseFetchError = err.message;
+    console.error('Không thể tự động tải danh sách môn học sau khi đăng nhập:', err);
+  }
+
   return {
     success: true,
     accessToken,
     cookie,
     idRsInit,
+    courseData: freshCourseData,
+    courseFetchError,
     message: cookie
       ? 'Đăng nhập thành công. Access token và cookie được tự động điền nếu có.'
       : 'Đăng nhập thành công. Access token được điền tự động. Nếu cần, hãy copy COOKIE thủ công từ trình duyệt.',

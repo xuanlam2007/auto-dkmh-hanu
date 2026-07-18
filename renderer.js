@@ -34,6 +34,7 @@ const loginHint = document.getElementById('loginHint');
 let courseRows = [];
 const selectedIds = new Set();
 let loaded = false;
+let lastCredentials = { accessToken: '', cookie: '' };
 
 function setActiveTab(tabName) {
   tabButtons.forEach((button) => {
@@ -186,43 +187,90 @@ function appendLog(message, type = 'info') {
   logArea.scrollTop = logArea.scrollHeight;
 }
 
-async function loadCourses() {
+function applyCourseData(data, sourceLabel) {
+  if (!data) {
+    throw new Error('Dữ liệu trả về rỗng');
+  }
+
+  const nameMap = {};
+  if (Array.isArray(data.ds_mon_hoc)) {
+    data.ds_mon_hoc.forEach((item) => {
+      if (item.ma) {
+        nameMap[item.ma] = item.ten || item.ten_eg || item.ma;
+      }
+    });
+  }
+
+  courseRows = Array.isArray(data.ds_nhom_to)
+    ? data.ds_nhom_to.map((item) => ({
+        ...item,
+        ten_mon: item.ten_mon || nameMap[item.ma_mon] || item.ten_mon_eg || item.ma_mon || '',
+      }))
+    : [];
+
+  loaded = true;
+  tableStatus.textContent = `Tìm thấy ${courseRows.length} học phần${sourceLabel ? ' (' + sourceLabel + ')' : ''}.`;
+  renderRegistrationBanner(data);
+  renderTable();
+}
+
+function renderRegistrationBanner(data) {
+  const banner = document.getElementById('registrationBanner');
+  if (!banner) return;
+
+  const isOpen = data.trong_thoi_gian_dang_ky;
+  const note = data.dien_giai_enable_chung || '';
+  const ghiChu = data.ghi_chu_dkmh || '';
+
+  banner.style.display = 'block';
+  banner.style.background = isOpen ? '#e6f4ea' : '#fdecea';
+  banner.style.color = isOpen ? '#1e4620' : '#7a1f1a';
+  banner.innerHTML = `
+    <strong>${isOpen ? '🟢 Đang trong thời gian cho phép đăng ký' : '🔴 Ngoài thời gian cho phép đăng ký'}</strong>
+    ${note ? '<br />' + note : ''}
+    ${ghiChu ? '<div class="small-text" style="margin-top:4px;">' + ghiChu + '</div>' : ''}
+  `;
+}
+
+async function loadInitialCourses() {
   try {
     if (!window.electronAPI || !window.electronAPI.loadCourseData) {
       throw new Error('Preload bridge chưa sẵn sàng.');
     }
-
     const data = await window.electronAPI.loadCourseData();
-
-    if (!data) {
-      throw new Error('Dữ liệu trả về rỗng');
-    }
-
-    const nameMap = {};
-    if (Array.isArray(data.ds_mon_hoc)) {
-      data.ds_mon_hoc.forEach((item) => {
-        if (item.ma) {
-          nameMap[item.ma] = item.ten || item.ten_eg || item.ma;
-        }
-      });
-    }
-
-    courseRows = Array.isArray(data.ds_nhom_to)
-      ? data.ds_nhom_to.map((item) => ({
-          ...item,
-          ten_mon: item.ten_mon || nameMap[item.ma_mon] || item.ten_mon_eg || item.ma_mon || '',
-        }))
-      : [];
-
-    loaded = true;
-    tableStatus.textContent = `Tìm thấy ${courseRows.length} học phần.`;
-    renderTable();
+    applyCourseData(data, 'dữ liệu mẫu — hãy đăng nhập để lấy dữ liệu thật mới nhất');
   } catch (error) {
     loaded = false;
     tableStatus.textContent = 'Không thể tải dữ liệu học phần.';
-    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Lỗi khi tải dữ liệu học phần. Kiểm tra file data/w-dslocnhomto.json hoặc console.</td></tr>';
-    appendLog(`Lỗi load dữ liệu: ${error.message}`, 'error');
+    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Lỗi khi tải dữ liệu mẫu. Kiểm tra thư mục data-example hoặc console.</td></tr>';
+    appendLog(`Lỗi load dữ liệu mẫu: ${error.message}`, 'error');
     console.error(error);
+  }
+}
+
+async function refreshCoursesFromApi(credentials, { silent = false } = {}) {
+  if (!window.electronAPI || !window.electronAPI.refreshCourseData) {
+    appendLog('Preload bridge chưa hỗ trợ refreshCourseData.', 'error');
+    return;
+  }
+
+  if (!silent) {
+    tableStatus.textContent = 'Đang tải danh sách môn học mới nhất từ hệ thống...';
+  }
+
+  try {
+    const result = await window.electronAPI.refreshCourseData(credentials);
+    if (result.success && result.data) {
+      applyCourseData(result.data, 'dữ liệu trực tiếp từ hệ thống');
+      appendLog('✅ Đã tải danh sách môn học mới nhất từ hệ thống.');
+    } else {
+      appendLog(`⚠️ Không tải được danh sách môn học mới: ${result.error || 'lỗi không xác định'}. Vẫn giữ dữ liệu hiện có.`, 'error');
+      if (result.data) {
+        applyCourseData(result.data, 'dữ liệu cũ — refresh thất bại');
+      }
+    }
+  } catch (error) {
+    appendLog(`Lỗi khi refresh danh sách môn học: ${error.message}`, 'error');
   }
 }
 
@@ -347,6 +395,15 @@ loginButton.addEventListener('click', async () => {
         idRsInitInput.value = result.idRsInit;
         appendLoginHint('ID_RS_INIT đã được tự động điền từ thông tin đăng nhập.');
       }
+
+      lastCredentials = { ACCESS_TOKEN: result.accessToken, COOKIE: result.cookie };
+      if (result.courseData) {
+        applyCourseData(result.courseData, 'dữ liệu trực tiếp từ hệ thống, ngay sau khi đăng nhập');
+        appendLog('✅ Đã tự động tải danh sách môn học mới nhất sau khi đăng nhập.');
+      } else if (result.courseFetchError) {
+        appendLog(`⚠️ Đăng nhập thành công nhưng không tự tải được danh sách môn học: ${result.courseFetchError}. Thử bấm "Làm mới danh sách".`, 'error');
+      }
+
       setActiveTab('config');
     } else {
       updateLoginStatus(result.message || 'Đăng nhập thất bại.', 'error');
@@ -438,4 +495,19 @@ if (window.electronAPI) {
   }
 }
 
-loadCourses();
+const refreshCoursesButton = document.getElementById('refreshCoursesButton');
+if (refreshCoursesButton) {
+  refreshCoursesButton.addEventListener('click', async () => {
+    const creds = (lastCredentials.ACCESS_TOKEN || lastCredentials.COOKIE)
+      ? lastCredentials
+      : { ACCESS_TOKEN: accessTokenInput.value.trim(), COOKIE: cookieInput.value.trim() };
+    refreshCoursesButton.disabled = true;
+    const originalText = refreshCoursesButton.textContent;
+    refreshCoursesButton.textContent = 'Đang tải...';
+    await refreshCoursesFromApi(creds);
+    refreshCoursesButton.disabled = false;
+    refreshCoursesButton.textContent = originalText;
+  });
+}
+
+loadInitialCourses();

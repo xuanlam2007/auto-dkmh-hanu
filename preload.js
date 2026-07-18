@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resumeRegistration: () => ipcRenderer.invoke('register:resume'),
   cancelRegistration: () => ipcRenderer.invoke('register:stop'),
   loadCourseData: () => ipcRenderer.invoke('courses:load'),
+  refreshCourseData: (credentials) => ipcRenderer.invoke('courses:refresh', credentials),
   performLogin: (credentials) => ipcRenderer.invoke('auth:login', credentials),
   onLog: (callback) => ipcRenderer.on('register:log', (event, payload) => callback(payload)),
   onDone: (callback) => ipcRenderer.on('register:done', (event, payload) => callback(payload)),
