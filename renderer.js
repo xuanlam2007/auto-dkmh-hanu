@@ -280,7 +280,7 @@ function renderRegistrationBanner(data) {
   banner.style.background = isOpen ? '#e6f4ea' : '#fdecea';
   banner.style.color = isOpen ? '#1e4620' : '#7a1f1a';
   banner.innerHTML = `
-    <strong>${isOpen ? '🟢 ' + note : '🔴 ' + note}</strong>
+    <strong>${isOpen ? '🟢 Đang trong thời gian cho phép đăng ký' : '🔴 Ngoài thời gian cho phép đăng ký'}</strong>
     ${'<br />'}
     ${ghiChu ? '<div class="small-text" style="margin-top:4px;">' + ghiChu + '</div>' : ''}
   `;
