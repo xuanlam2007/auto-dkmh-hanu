@@ -187,7 +187,7 @@ function appendLog(message, type = 'info') {
   logArea.scrollTop = logArea.scrollHeight;
 }
 
-function applyCourseData(data, sourceLabel) {
+function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
   if (!data) {
     throw new Error('Dữ liệu trả về rỗng');
   }
@@ -210,8 +210,22 @@ function applyCourseData(data, sourceLabel) {
 
   loaded = true;
   tableStatus.textContent = `Tìm thấy ${courseRows.length} học phần${sourceLabel ? ' (' + sourceLabel + ')' : ''}.`;
-  renderRegistrationBanner(data);
+
+  if (showBanner) {
+    renderRegistrationBanner(data);
+  } else {
+    const banner = document.getElementById('registrationBanner');
+    if (banner) banner.style.display = 'none';
+  }
+
   renderTable();
+}
+
+function cleanServerNote(str) {
+  return (str || '')
+    .trim()
+    .replace(/^[.\s]+/, '')
+    .trim();
 }
 
 function renderRegistrationBanner(data) {
@@ -219,15 +233,15 @@ function renderRegistrationBanner(data) {
   if (!banner) return;
 
   const isOpen = data.trong_thoi_gian_dang_ky;
-  const note = data.dien_giai_enable_chung || '';
-  const ghiChu = data.ghi_chu_dkmh || '';
+  const note = cleanServerNote(data.dien_giai_enable_chung);
+  const ghiChu = cleanServerNote(data.ghi_chu_dkmh);
 
   banner.style.display = 'block';
   banner.style.background = isOpen ? '#e6f4ea' : '#fdecea';
   banner.style.color = isOpen ? '#1e4620' : '#7a1f1a';
   banner.innerHTML = `
-    <strong>${isOpen ? '🟢 Đang trong thời gian cho phép đăng ký' : '🔴 Ngoài thời gian cho phép đăng ký'}</strong>
-    ${note ? '<br />' + note : ''}
+    <strong>${isOpen ? '🟢 ' + note : '🔴 ' + note}</strong>
+    ${'<br />'}
     ${ghiChu ? '<div class="small-text" style="margin-top:4px;">' + ghiChu + '</div>' : ''}
   `;
 }
@@ -238,7 +252,7 @@ async function loadInitialCourses() {
       throw new Error('Preload bridge chưa sẵn sàng.');
     }
     const data = await window.electronAPI.loadCourseData();
-    applyCourseData(data, 'dữ liệu mẫu — hãy đăng nhập để lấy dữ liệu thật mới nhất');
+    applyCourseData(data, 'dữ liệu mẫu — hãy đăng nhập để lấy dữ liệu thật mới nhất', { showBanner: false });
   } catch (error) {
     loaded = false;
     tableStatus.textContent = 'Không thể tải dữ liệu học phần.';
