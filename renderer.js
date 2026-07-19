@@ -235,6 +235,7 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
 
   /*********************************************************************/
   /* Ý NGHĨA TỪNG SỐ (GHI CHÚ ĐỘ TIN CẬY DỰA TRÊN NGUỒN ĐÃ KIỂM CHỨNG) */
+  /*                  RESEARCH bởi xlam - 19/7/2026                    */
   /*********************************************************************/
   // - 61: Tiêu chuẩn
   //      Nguồn: https://hanu.vn/a/153681 (ngành Quốc tế học)
@@ -248,8 +249,8 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
   //      + Xác nhận HANU chỉ tuyển văn bằng 2 cho 2 ngành Anh, Trung Quốc (khớp ds_khoa: "Trung").
   // - 64: Vừa làm vừa học
   //      Nguồn: https://hanu.vn/c/9033 (Ngôn ngữ Hàn Quốc)
-  //      + Ảnh CTĐT thật (mã học phần 64...) hệ Vừa làm vừa học ngành Hàn Quốc, khớp ds_khoa
-  //      + dùng hậu tố ".TC" (HAN.TC, NHAT.TC, TRUNG.TC = "Tại chức", tên cũ của VLVH).
+  //      + Ảnh CTĐT thật (mã học phần 64...) hệ Vừa làm vừa học ngành Hàn Quốc, khớp ds_khoa,
+  //        dùng hậu tố ".TC" (HAN.TC, NHAT.TC, TRUNG.TC = "Tại chức", tên cũ của VLVH).
   //      + "Tại chức" được giải thích tại Câu 1: Hệ đào tạo Vừa làm vừa học (VLVH) là gì?
   //         Nguồn: https://www.hanu.vn/a/82347/HOI-DAP-ve-he-dao-tao-Vua-lam-vua-hoc?c=7900
   // - 65: Đào tạo từ xa
@@ -260,6 +261,7 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
   //      + File danh sách dự thi 62FIT2DSA/66FIT2DSA HK2 2025-2026: các lớp thi
   //        66FIT2DSA đều có mã dạng "XC-YYTT" (vd 1C-24TT, 2C-24TT, 3C-24TT) nên
   //        khớp mẫu ký hiệu Tiên tiến.
+  // - Không có mã: La Trobe hoặc các chương trình khác (LIB, ITEC,...)
 
   /**********************************/
   /* MÃ KHÔNG BẮT ĐẦU BẰNG 2 CHỮ SỐ */
