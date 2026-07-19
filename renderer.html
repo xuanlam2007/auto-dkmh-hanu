@@ -274,12 +274,17 @@
             <input id="filterCode" type="text" placeholder="Tìm theo mã môn học" />
           </div>
           <div class="field">
-            <label for="filterHe">Hệ đào tạo</label>
+            <label for="filterHe">Tiền tố CTĐT</label>
             <select id="filterHe">
               <option value="">Tất cả</option>
-              <option value="61">Đại trà</option>
-              <option value="62">CLC</option>
-              <option value="66">Tiên tiến</option>
+              <option value="61" selected>61 - Tiêu chuẩn</option>
+              <option value="62">62 - CLC</option>
+              <option value="63">63</option>
+              <option value="64">64</option>
+              <option value="65">65</option>
+              <option value="66">66 - Tiên tiến</option>
+              <option value="LATROBE">La Trobe</option>
+              <option value="OTHER">LIB, ITEC,...</option>
             </select>
           </div>
           <div class="field">
@@ -315,7 +320,6 @@
             <tr>
               <th class="checkbox-cell"><input type="checkbox" id="headSelectAll" /></th>
               <th>Mã MH</th>
-              <th>Hệ</th>
               <th>Tên môn học</th>
               <th>Nhóm</th>
               <th>Tổ</th>
@@ -327,7 +331,7 @@
             </tr>
           </thead>
           <tbody id="coursesTableBody">
-            <tr><td colspan="11" class="small-text">Vui lòng chờ dữ liệu hoặc điều chỉnh bộ lọc.</td></tr>
+            <tr><td colspan="10" class="small-text">Vui lòng chờ dữ liệu hoặc điều chỉnh bộ lọc.</td></tr>
           </tbody>
         </table>
       </div>

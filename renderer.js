@@ -2,6 +2,11 @@
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 const filterCode = document.getElementById('filterCode');
 const filterHe = document.getElementById('filterHe');
+// Giá trị dùng để lọc các môn KHÔNG có tiền tố CTĐT dạng 2 số:
+// - LATROBE: xác định qua field ds_khoa của môn có chứa "LATROBE"
+// - OTHER: các mã còn lại không có tiền tố số và không xác định được là La Trobe (vd: LIB, ITEC,...)
+const LATROBE_CTDT_PREFIX_VALUE = 'LATROBE';
+const OTHER_CTDT_PREFIX_VALUE = 'OTHER';
 const filterName = document.getElementById('filterName');
 const filterGroup = document.getElementById('filterGroup');
 const filterClass = document.getElementById('filterClass');
@@ -61,7 +66,7 @@ function normalizeSearchText(value) {
 function getCurrentFilters() {
   return {
     code: normalizeSearchText(filterCode.value),
-    he: filterHe.value, // so khớp chính xác 2 số hệ, không cần normalize
+    he: filterHe.value, // so khớp theo ctdt_prefix_value (2 số hoặc OTHER)
     name: normalizeSearchText(filterName.value),
     group: normalizeSearchText(filterGroup.value),
     class: normalizeSearchText(filterClass.value),
@@ -76,7 +81,7 @@ function filterRow(row, filters) {
   if (filters.code && !textMatches(row.ma_mon, filters.code)) {
     return false;
   }
-  if (filters.he && String(row.ma_mon || '').slice(0, 2) !== filters.he) {
+  if (filters.he && row.ctdt_prefix_value !== filters.he) {
     return false;
   }
   if (filters.name && !textMatches(row.ten_mon, filters.name)) {
@@ -104,7 +109,7 @@ function renderTable() {
   coursesTableBody.innerHTML = '';
 
   if (!loaded) {
-    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Đang tải dữ liệu học phần...</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Đang tải dữ liệu học phần...</td></tr>';
     tableStatus.textContent = 'Đang tải dữ liệu học phần...';
     headSelectAll.checked = false;
     headSelectAll.indeterminate = false;
@@ -112,7 +117,7 @@ function renderTable() {
   }
 
   if (visibleRows.length === 0) {
-    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Không tìm thấy học phần phù hợp.</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Không tìm thấy học phần phù hợp.</td></tr>';
     tableStatus.textContent = 'Không tìm thấy học phần phù hợp.';
     headSelectAll.checked = false;
     headSelectAll.indeterminate = false;
@@ -126,7 +131,6 @@ function renderTable() {
     tr.innerHTML = `
       <td class="checkbox-cell"><input type="checkbox" data-id="${row.id_to_hoc}" ${checked ? 'checked' : ''} /></td>
       <td>${row.ma_mon}</td>
-      <td>${row.he_dao_tao || ''}</td>
       <td>${row.ten_mon || row.ten_mon_eg || row.ten || ''}</td>
       <td>${row.nhom_to}</td>
       <td>${row.to ?? ''}</td>
@@ -223,29 +227,37 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
     }
   });
 
-  // 2 số đầu mã môn tại HANU thể hiện hệ đào tạo: 
-  // 61 = Đại trà
-  // 62 = CLC (Chất lượng cao)
-  // 66 = TT (Tiên tiến)
-  // Nếu tồn tại các mã khác chưa xác định rõ thì chỉ
-  // hiển thị nguyên số hệ, không đoán tên nữa.
-  const HE_DAO_TAO_MAP = { '61': 'Đại trà', '62': 'CLC', '66': 'Tiên tiến' };
-  function getHeDaoTao(maMon) {
-    const prefix = String(maMon || '').slice(0, 2);
-    return HE_DAO_TAO_MAP[prefix] || prefix;
+  // DỰ ĐOÁN (do không biết quy ước nội bộ của các mã số đứng trước môn học trên API)
+  //
+  // 2 số đầu mã môn tại HANU thể hiện Tiền tố CTĐT (chương trình đào tạo): 61 | 62 | 63 | 64 | 65 | 66.
+  // Mã KHÔNG bắt đầu bằng 2 số:
+  // - Nếu ds_khoa của môn có chứa "LATROBE" thì xác định là La Trobe.
+  // - Còn lại (chưa chắc chắn, vd: LIB, ITEC,...) gom vào nhóm "LIB, ITEC,...".
+  function getCtdtPrefixValue(item) {
+    const prefix = String(item.ma_mon || '').slice(0, 2);
+    if (/^\d{2}$/.test(prefix)) {
+      return prefix;
+    }
+    const dsKhoa = Array.isArray(item.ds_khoa) ? item.ds_khoa : [];
+    if (dsKhoa.includes('LATROBE')) {
+      return LATROBE_CTDT_PREFIX_VALUE;
+    }
+    return OTHER_CTDT_PREFIX_VALUE;
   }
 
   courseRows = Array.isArray(data.ds_nhom_to)
-    ? data.ds_nhom_to.map((item) => ({
-        ...item,
-        ten_mon: item.ten_mon
-          || nameMap[item.ma_mon]
-          || suffixNameMap[item.ma_mon.slice(2)]
-          || item.ten_mon_eg
-          || item.ma_mon
-          || '',
-        he_dao_tao: getHeDaoTao(item.ma_mon),
-      }))
+    ? data.ds_nhom_to.map((item) => {
+        return {
+          ...item,
+          ten_mon: item.ten_mon
+            || nameMap[item.ma_mon]
+            || suffixNameMap[item.ma_mon.slice(2)]
+            || item.ten_mon_eg
+            || item.ma_mon
+            || '',
+          ctdt_prefix_value: getCtdtPrefixValue(item),
+        };
+      })
     : [];
 
   loaded = true;
@@ -296,7 +308,7 @@ async function loadInitialCourses() {
   } catch (error) {
     loaded = false;
     tableStatus.textContent = 'Không thể tải dữ liệu học phần.';
-    coursesTableBody.innerHTML = '<tr><td colspan="11" class="small-text">Lỗi khi tải dữ liệu mẫu. Kiểm tra thư mục data-example hoặc console.</td></tr>';
+    coursesTableBody.innerHTML = '<tr><td colspan="10" class="small-text">Lỗi khi tải dữ liệu mẫu. Kiểm tra thư mục data-example hoặc console.</td></tr>';
     appendLog(`Lỗi load dữ liệu mẫu: ${error.message}`, 'error');
     console.error(error);
   }
@@ -330,7 +342,7 @@ async function refreshCoursesFromApi(credentials, { silent = false } = {}) {
 
 function resetFilters() {
   filterCode.value = '';
-  filterHe.value = '';
+  filterHe.value = '61';
   filterName.value = '';
   filterGroup.value = '';
   filterClass.value = '';
