@@ -227,12 +227,46 @@ function applyCourseData(data, sourceLabel, { showBanner = true } = {}) {
     }
   });
 
-  // DỰ ĐOÁN (do không biết quy ước nội bộ của các mã số đứng trước môn học trên API)
-  //
-  // 2 số đầu mã môn tại HANU thể hiện Tiền tố CTĐT (chương trình đào tạo): 61 | 62 | 63 | 64 | 65 | 66.
-  // Mã KHÔNG bắt đầu bằng 2 số:
+  /*
+    Sau tìm hiểu, mình rút ra được 1 số thông tin về các tiền tố CTĐT (2 số đầu mã môn) tại HANU,
+    dựa trên các nguồn đã kiểm chứng:
+    2 số đầu mã môn tại HANU thể hiện Tiền tố CTĐT (chương trình đào tạo): 61 | 62 | 63 | 64 | 65 | 66
+  **/
+
+  /*********************************************************************/
+  /* Ý NGHĨA TỪNG SỐ (GHI CHÚ ĐỘ TIN CẬY DỰA TRÊN NGUỒN ĐÃ KIỂM CHỨNG) */
+  /*********************************************************************/
+  // - 61: Tiêu chuẩn
+  //      Nguồn: https://hanu.vn/a/153681 (ngành Quốc tế học)
+  //      + Văn bản CTĐT ghi cụ thể mục "6. Hình thức đào tạo: Chính quy".
+  // - 62: CLC
+  //      Nguồn: https://lms.fit.hanu.vn/mod/forum/discuss.php?d=3850 (thông báo Khoa CNTT)
+  //      + Ghi cụ thể "62FIT3ISD (CLC 03)" + file DS dự thi 62FIT2DSA/66FIT2DSA HK2 2025-2026,
+  //        các lớp thi 62FIT2DSA đều có mã dạng "XC-YYC" (vd 1C-22C, 2C-23C) - khớp mẫu ký hiệu CLC.
+  // - 63: Văn bằng 2
+  //      Nguồn: https://hanu.vn/a/245424 (CTĐT hệ Bằng đại học thứ hai)
+  //      + Xác nhận HANU chỉ tuyển văn bằng 2 cho 2 ngành Anh, Trung Quốc (khớp ds_khoa: "Trung").
+  // - 64: Vừa làm vừa học
+  //      Nguồn: https://hanu.vn/c/9033 (Ngôn ngữ Hàn Quốc)
+  //      + Ảnh CTĐT thật (mã học phần 64...) hệ Vừa làm vừa học ngành Hàn Quốc, khớp ds_khoa
+  //      + dùng hậu tố ".TC" (HAN.TC, NHAT.TC, TRUNG.TC = "Tại chức", tên cũ của VLVH).
+  //      + "Tại chức" được giải thích tại Câu 1: Hệ đào tạo Vừa làm vừa học (VLVH) là gì?
+  //         Nguồn: https://www.hanu.vn/a/82347/HOI-DAP-ve-he-dao-tao-Vua-lam-vua-hoc?c=7900
+  // - 65: Đào tạo từ xa
+  //      Nguồn: https://hanu.vn/a/243773 (CTĐT hệ Đào tạo từ xa)
+  //      + Khớp ds_khoa: "DTTX" (Trung tâm Đào tạo từ xa).
+  // - 66: Tiên tiến
+  //      Nguồn: https://lms.fit.hanu.vn/mod/forum/discuss.php?d=3850
+  //      + File danh sách dự thi 62FIT2DSA/66FIT2DSA HK2 2025-2026: các lớp thi
+  //        66FIT2DSA đều có mã dạng "XC-YYTT" (vd 1C-24TT, 2C-24TT, 3C-24TT) nên
+  //        khớp mẫu ký hiệu Tiên tiến.
+
+  /**********************************/
+  /* MÃ KHÔNG BẮT ĐẦU BẰNG 2 CHỮ SỐ */
+  /**********************************/
   // - Nếu ds_khoa của môn có chứa "LATROBE" thì xác định là La Trobe.
   // - Còn lại (chưa chắc chắn, vd: LIB, ITEC,...) gom vào nhóm "LIB, ITEC,...".
+
   function getCtdtPrefixValue(item) {
     const prefix = String(item.ma_mon || '').slice(0, 2);
     if (/^\d{2}$/.test(prefix)) {
