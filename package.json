@@ -1,20 +1,34 @@
 {
   "name": "auto-dkmh-hanu",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npm run copy:data-example && vite",
+    "build": "tsc --noEmit && vite build && npm run copy:data-example",
+    "copy:data-example": "node -e \"require('fs').cpSync('electron/data-example','dist-electron/data-example',{recursive:true})\"",
+    "preview": "vite preview",
+    "electron:dev": "vite build --mode development && electron ."
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "type": "module",
-  "devDependencies": {
-    "electron": "^43.1.1"
-  },
+  "license": "GPL-3.0-or-later",
   "dependencies": {
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^43.1.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.1",
+    "vite-plugin-electron": "^0.28.7",
+    "vite-plugin-electron-renderer": "^0.14.5"
   }
 }
