@@ -1,19 +1,51 @@
+// @xuanlam2007
+// Tool tự động đăng ký học phần HANU (qldt.hanu.edu.vn)
+//
+// No more CLI :<
+
 import 'dotenv/config';
-import { fileURLToPath } from 'url';
 
 const API_URL = 'https://qldt.hanu.edu.vn/dkmh/api/dkmh/w-xulydkmhsinhvien';
 
-function parseCourses(coursesString) {
+export interface RegisterOptions {
+  ACCESS_TOKEN: string;
+  COOKIE: string;
+  COURSES: string;
+  SV_NGANH?: string;
+  ID_RS_INIT?: string;
+  RETRY_INTERVAL_MS?: string;
+  MAX_ATTEMPTS?: string;
+}
+
+export interface RegisterResult {
+  success: boolean;
+  cancelled?: boolean;
+  remaining: string[] | number;
+}
+
+export interface RegisterCallbacks {
+  onLog?: (message: string) => void;
+  onError?: (message: string) => void;
+  onDone?: (result: RegisterResult) => void;
+}
+
+export interface RegisterController {
+  cancelled: boolean;
+  paused: boolean;
+  resume: (() => void) | null;
+}
+
+function parseCourses(coursesString: string): Map<string, string> {
   const courses = new Map(
     coursesString.split(',')
       .map((pair) => pair.trim())
       .filter(Boolean)
-      .map((pair) => {
+      .map((pair): [string, string] => {
         const idx = pair.lastIndexOf(':');
         const name = pair.slice(0, idx);
         const idToHoc = pair.slice(idx + 1);
         return [idToHoc, name];
-      })
+      }),
   );
 
   if (courses.size === 0) {
@@ -23,18 +55,22 @@ function parseCourses(coursesString) {
   return courses;
 }
 
-function validateOptions(options) {
+function validateOptions(options: RegisterOptions) {
   const { ACCESS_TOKEN, COOKIE, COURSES } = options || {};
   if (!ACCESS_TOKEN || !COOKIE || !COURSES) {
     throw new Error('Thiếu biến môi trường. Kiểm tra lại file .env hoặc nhập đủ thông tin trong GUI. (ID_RS_INIT không bắt buộc — sẽ được lấy tự động khi server trả về id_rs).');
   }
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function tryRegister(config, idToHoc, idRs) {
+export async function tryRegister(
+  config: { ACCESS_TOKEN: string; COOKIE: string; SV_NGANH?: string },
+  idToHoc: string,
+  idRs?: string,
+): Promise<any> {
   const { ACCESS_TOKEN, COOKIE, SV_NGANH } = config;
   const body = {
     filter: {
@@ -65,7 +101,11 @@ export async function tryRegister(config, idToHoc, idRs) {
   return res.json();
 }
 
-export async function registerCourses(options, callbacks = {}, controller = null) {
+export async function registerCourses(
+  options: RegisterOptions,
+  callbacks: RegisterCallbacks = {},
+  controller: RegisterController | null = null,
+): Promise<RegisterResult> {
   validateOptions(options);
 
   const {
@@ -96,13 +136,13 @@ export async function registerCourses(options, callbacks = {}, controller = null
     // Nếu đang bị tạm dừng, chờ resume hoặc stop
     if (controller && controller.paused) {
       onLog('⏸️ Tiến trình đăng ký đang tạm dừng. Chờ lệnh tiếp tục hoặc huỷ...');
-      await new Promise((resolve) => {
-        controller.resume = resolve;
+      await new Promise<void>((resolve) => {
+        controller!.resume = resolve;
       });
       controller.resume = null;
       if (controller.cancelled) {
         onLog('⚠️ Tiến trình đăng ký đã bị huỷ trong khi tạm dừng.');
-        const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+        const result: RegisterResult = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
         onDone(result);
         return result;
       }
@@ -111,7 +151,7 @@ export async function registerCourses(options, callbacks = {}, controller = null
     for (const [idToHoc, name] of [...pendingCourses.entries()]) {
       if (controller && controller.cancelled) {
         onLog('⚠️ Tiến trình đăng ký đã bị dừng bởi người dùng.');
-        const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+        const result: RegisterResult = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
         onDone(result);
         return result;
       }
@@ -119,13 +159,13 @@ export async function registerCourses(options, callbacks = {}, controller = null
       // Kiểm tra tạm dừng ngay trước khi xử lý mỗi môn
       if (controller && controller.paused) {
         onLog('⏸️ Tiến trình đăng ký đang tạm dừng trước khi xử lý môn: ' + name);
-        await new Promise((resolve) => {
-          controller.resume = resolve;
+        await new Promise<void>((resolve) => {
+          controller!.resume = resolve;
         });
         controller.resume = null;
         if (controller.cancelled) {
           onLog('⚠️ Tiến trình đăng ký đã bị huỷ trong khi tạm dừng.');
-          const result = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
+          const result: RegisterResult = { success: false, cancelled: true, remaining: [...pendingCourses.values()] };
           onDone(result);
           return result;
         }
@@ -158,20 +198,20 @@ export async function registerCourses(options, callbacks = {}, controller = null
         const loiText = data.thong_bao_loi || '(không có mô tả lỗi)';
         onLog(`[${attempt}] (${name}) Chưa thành công: ${loiText}`);
       } catch (err) {
-        if (err.message === 'AUTH_EXPIRED') {
+        if ((err as Error).message === 'AUTH_EXPIRED') {
           onError('❌ Token/cookie đã hết hạn. Mở tab Đăng nhập để đăng nhập lại và cập nhật ACCESS_TOKEN + COOKIE mới rồi thử lại.');
-          const result = { success: false, remaining: pendingCourses.size };
+          const result: RegisterResult = { success: false, remaining: pendingCourses.size };
           onDone(result);
           return result;
         }
-        onLog(`[${attempt}] (${name}) Lỗi request: ${err.message}`);
+        onLog(`[${attempt}] (${name}) Lỗi request: ${(err as Error).message}`);
       }
 
       await sleep(interval);
     }
   }
 
-  const result = {
+  const result: RegisterResult = {
     success: pendingCourses.size === 0,
     remaining: [...pendingCourses.values()],
   };
@@ -179,39 +219,9 @@ export async function registerCourses(options, callbacks = {}, controller = null
   if (result.success) {
     onLog('🎉 Đã đăng ký xong tất cả các môn trong danh sách.');
   } else {
-    onLog(`Đã hết số lần thử tối đa. Còn ${result.remaining.length} môn chưa đăng ký được: ${result.remaining.join(', ')}`);
+    onLog(`Đã hết số lần thử tối đa. Còn ${(result.remaining as string[]).length} môn chưa đăng ký được: ${(result.remaining as string[]).join(', ')}`);
   }
 
   onDone(result);
   return result;
-}
-
-export async function main() {
-  const {
-    ACCESS_TOKEN,
-    COOKIE,
-    COURSES,
-    SV_NGANH = '1',
-    ID_RS_INIT,
-    RETRY_INTERVAL_MS = '1500',
-    MAX_ATTEMPTS = '500',
-  } = process.env;
-
-  return registerCourses({
-    ACCESS_TOKEN,
-    COOKIE,
-    COURSES,
-    SV_NGANH,
-    ID_RS_INIT,
-    RETRY_INTERVAL_MS,
-    MAX_ATTEMPTS,
-  }, {
-    onLog: console.log,
-    onError: console.error,
-  });
-}
-
-const __filename = fileURLToPath(import.meta.url);
-if (process.argv[1] === __filename) {
-  main();
 }

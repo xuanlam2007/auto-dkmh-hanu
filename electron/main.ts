@@ -1,22 +1,23 @@
-﻿import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { registerCourses } from './register_fixed.js';
 import fs from 'fs';
+import { registerCourses, type RegisterCallbacks, type RegisterController, type RegisterOptions } from './register';
+import type { CourseData } from '../src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const COURSES_LIST_URL = 'https://qldt.hanu.edu.vn/public/api/dkmh/w-locdsnhomto';
 
-let mainWindow;
-let courseData = null;
-let currentController = null;
+let mainWindow: BrowserWindow | null;
+let courseData: CourseData | null = null;
+let currentController: RegisterController | null = null;
 
 // Dữ liệu mẫu (data-example) chỉ dùng để hiển thị tạm khi CHƯA đăng nhập,
 // hoặc khi việc fetch trực tiếp từ API bị lỗi. Sau khi đăng nhập thành công,
 // dữ liệu thật sẽ được lấy trực tiếp từ API và ghi đè lên đây.
-async function loadExampleCourseData() {
+async function loadExampleCourseData(): Promise<CourseData> {
   const coursePath = path.join(__dirname, 'data-example', 'w-dslocnhomto.json');
   const content = await fs.promises.readFile(coursePath, 'utf8');
   const json = JSON.parse(content);
@@ -24,7 +25,7 @@ async function loadExampleCourseData() {
 }
 
 // Gọi thẳng API để lấy danh sách môn/tổ học mới nhất
-async function fetchCourseDataFromApi({ ACCESS_TOKEN, COOKIE } = {}) {
+async function fetchCourseDataFromApi({ ACCESS_TOKEN, COOKIE }: { ACCESS_TOKEN?: string; COOKIE?: string } = {}): Promise<CourseData> {
   const res = await fetch(COURSES_LIST_URL, {
     method: 'POST',
     headers: {
@@ -61,13 +62,20 @@ function createWindow() {
     width: 1100,
     height: 780,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'), // was 'preload.js'
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer.html'));
+  // Vite + electron: dev thì load dev server (HMR), prod thì load file build sẵn trong dist/
+  // thay cho mainWindow.loadFile(path.join(__dirname, 'renderer.html')) ở bản cũ
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
   mainWindow.setMenuBarVisibility(false);
 }
 
@@ -98,7 +106,7 @@ ipcMain.handle('courses:load', async () => {
 // Handler: làm mới danh sách môn học trực tiếp từ API thật.
 // Renderer gọi sau khi đăng nhập thành công (gọi lại
 // bất cứ lúc nào để cập nhật slot).
-ipcMain.handle('courses:refresh', async (event, credentials) => {
+ipcMain.handle('courses:refresh', async (_event: IpcMainInvokeEvent, credentials) => {
   try {
     const fresh = await fetchCourseDataFromApi(credentials || {});
     courseData = fresh;
@@ -107,49 +115,49 @@ ipcMain.handle('courses:refresh', async (event, credentials) => {
     console.error('Lỗi khi fetch danh sách môn học từ API:', error);
     return {
       success: false,
-      error: error.message || 'Lỗi không xác định khi tải danh sách môn học.',
+      error: (error as Error).message || 'Lỗi không xác định khi tải danh sách môn học.',
       data: courseData,
       fromLiveApi: false,
     };
   }
 });
 
-function extractCurrUser(codeLocation) {
+function extractCurrUser(codeLocation: string | null): string | null {
   if (!codeLocation) {
     return null;
-  }
-
-  try {
+  } try {
     const redirectUrl = new URL(codeLocation);
     const hash = redirectUrl.hash.replace(/^#\/?/, '');
     const fragmentParams = new URLSearchParams(hash);
     return fragmentParams.get('CurrUser');
-  } catch {
+  } 
+  catch {
+
     return null;
+
   }
 }
 
-function extractCurrUserFromText(text) {
+function extractCurrUserFromText(text: string | null): string | null {
   if (!text) {
     return null;
   }
+
 
   const regex = /CurrUser=([A-Za-z0-9_\-]+)/;
   const match = text.match(regex);
   return match ? match[1] : null;
 }
 
-ipcMain.handle('auth:login', async (event, credentials) => {
+ipcMain.handle('auth:login', async (_event: IpcMainInvokeEvent, credentials) => {
   const { username, password } = credentials || {};
 
   if (!username || !password) {
     throw new Error('Chưa nhập tài khoản hoặc mật khẩu.');
   }
-
   const loginPayload = JSON.stringify({ username, password, uri: 'https://qldt.hanu.edu.vn/#/' });
   const code = Buffer.from(loginPayload, 'utf8').toString('base64url');
   const signinUrl = `https://qldt.hanu.edu.vn/api/pn-signin?code=${encodeURIComponent(code)}&gopage=&mgr=1`;
-
   const response = await fetch(signinUrl, {
     method: 'GET',
     redirect: 'manual',
@@ -163,11 +171,12 @@ ipcMain.handle('auth:login', async (event, credentials) => {
 
   const locationHeader = response.headers.get('location');
   let currUserBase64 = extractCurrUser(locationHeader);
+
+
   if (!currUserBase64) {
     const bodyText = await response.text();
     currUserBase64 = extractCurrUserFromText(bodyText);
   }
-
   if (!currUserBase64) {
     throw new Error('Không thể xác thực đăng nhập. Kiểm tra lại tài khoản/mật khẩu và thử lại.');
   }
@@ -177,26 +186,26 @@ ipcMain.handle('auth:login', async (event, credentials) => {
   const accessToken = parsed.access_token || parsed.accessToken || '';
   // Thử truy xuất các key khả dụng chứa id_rs từ payload CurrUser
   const idRsInit = parsed.id_rs || parsed.idRs || parsed.id_rs_init || parsed.rs || parsed.rs_id || parsed.idRsInit || null;
-
-  const cookieValues = [];
+  const cookieValues: string[] = [];
   response.headers.forEach((value, name) => {
     if (name.toLowerCase() === 'set-cookie') {
       cookieValues.push(value);
     }
   });
-
   const cookie = cookieValues.length
     ? cookieValues.map((value) => value.split(';')[0]).join('; ')
     : '';
 
+
+
   // Tự động lấy danh sách môn học mới nhất ngay sau khi đăng nhập thành công
-  let freshCourseData = null;
-  let courseFetchError = null;
+  let freshCourseData: CourseData | null = null;
+  let courseFetchError: string | null = null;
   try {
     freshCourseData = await fetchCourseDataFromApi({ ACCESS_TOKEN: accessToken, COOKIE: cookie });
     courseData = freshCourseData;
   } catch (err) {
-    courseFetchError = err.message;
+    courseFetchError = (err as Error).message;
     console.error('Không thể tự động tải danh sách môn học sau khi đăng nhập:', err);
   }
 
@@ -213,9 +222,9 @@ ipcMain.handle('auth:login', async (event, credentials) => {
   };
 });
 
-ipcMain.handle('register:start', async (event, options) => {
+ipcMain.handle('register:start', async (event: IpcMainInvokeEvent, options: RegisterOptions) => {
   const sender = event.sender;
-  const sendLog = (message, type = 'info') => {
+  const sendLog = (message: string, type: 'info' | 'error' = 'info') => {
     sender.send('register:log', { message, type });
   };
 
@@ -231,26 +240,28 @@ ipcMain.handle('register:start', async (event, options) => {
     };
     sendLog(`Trạng thái cấu hình: ACCESS_TOKEN=${presence.hasAccessToken ? 'YES' : 'NO'}, COOKIE=${presence.hasCookie ? 'YES' : 'NO'}, COURSES=${presence.hasCourses ? 'YES' : 'NO'}, ID_RS_INIT=${presence.hasIdRsInit ? 'YES' : 'NO'}`);
 
-    // Create controller for pause / resume / cancel
-    const controller = { cancelled: false, paused: false, resume: null };
+    // Create controller cho pause / resume / cancel
+    const controller: RegisterController = { cancelled: false, paused: false, resume: null };
     currentController = controller;
 
-    const result = await registerCourses(options, {
+    const callbacks: RegisterCallbacks = {
       onLog: (message) => sendLog(message, 'info'),
       onError: (message) => sendLog(message, 'error'),
       onDone: (result) => sender.send('register:done', result),
-    }, controller);
+    };
+
+    const result = await registerCourses(options, callbacks, controller);
 
     return result;
   } catch (error) {
-    sendLog(`Lỗi không mong đợi: ${error.message}`, 'error');
+    sendLog(`Lỗi không mong đợi: ${(error as Error).message}`, 'error');
     throw error;
   } finally {
     currentController = null;
   }
 });
 
-// Pause / resume / stop handlers
+// Pause / resume / stop handler
 ipcMain.handle('register:pause', async () => {
   if (!currentController) return { ok: false, error: 'No active registration' };
   currentController.paused = true;
@@ -262,7 +273,7 @@ ipcMain.handle('register:resume', async () => {
   if (!currentController) return { ok: false, error: 'No active registration' };
   currentController.paused = false;
   if (currentController.resume) {
-    try { currentController.resume(); } catch (e) { /* ignore */ }
+    try { currentController.resume(); } catch (e) { /* bỏ qua */ }
     currentController.resume = null;
   }
   if (mainWindow) mainWindow.webContents.send('register:log', { message: '▶️ Tiến trình đăng ký tiếp tục.' });
@@ -273,7 +284,7 @@ ipcMain.handle('register:stop', async () => {
   if (!currentController) return { ok: false, error: 'No active registration' };
   currentController.cancelled = true;
   if (currentController.resume) {
-    try { currentController.resume(); } catch (e) { /* ignore */ }
+    try { currentController.resume(); } catch (e) { /* bỏ qua */ }
     currentController.resume = null;
   }
   if (mainWindow) mainWindow.webContents.send('register:log', { message: '🛑 Tiến trình đăng ký đã bị huỷ bởi người dùng.' });
