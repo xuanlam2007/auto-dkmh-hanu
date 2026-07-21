@@ -110,7 +110,16 @@ export default function App() {
   const collator = useMemo(() => new Intl.Collator('vi', { sensitivity: 'base', numeric: true }), []);
 
   const visibleRows = useMemo(() => {
-    return courseRows.filter((row) => filterRow(row, filters))
+    return courseRows
+      .filter((row) => filterRow(row, filters))
+      .slice()
+      .sort((a, b) => {
+        const byName = collator.compare(a.ten_mon || '', b.ten_mon || '');
+        if (byName !== 0) return byName;
+        const byCode = collator.compare(a.ma_mon || '', b.ma_mon || '');
+        if (byCode !== 0) return byCode;
+        return collator.compare(String(a.nhom_to || ''), String(b.nhom_to || ''));
+      });
   }, [courseRows, filters, collator]);
 
   const handleFilterChange = useCallback((field: keyof CourseFilters, value: string) => {
