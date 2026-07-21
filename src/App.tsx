@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CourseData, CourseRow, RegisterLogPayload, RegisterOptions } from './types';
+import type { CourseData, CourseRow, RegisterLogPayload } from './types';
 import { buildCourseRows, filterRow, type CourseFilters } from './utils/courseData';
+import SearchTab from './components/SearchTab';
 import LoginTab from './components/LoginTab';
+import RegistrationBanner from './components/RegistrationBanner';
 
 type TabName = 'search' | 'login' | 'config';
 
@@ -9,6 +11,13 @@ const DEFAULT_FILTERS: CourseFilters = { code: '', he: '61', name: '', group: ''
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabName>('search');
+  const [courseRows, setCourseRows] = useState<CourseRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [tableStatus, setTableStatus] = useState('Đang tải dữ liệu học phần...');
+  const [bannerData, setBannerData] = useState<CourseData | null>(null);
+  const [filters, setFilters] = useState<CourseFilters>(DEFAULT_FILTERS);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
 
   const lastCredentials = useRef<{ ACCESS_TOKEN?: string; COOKIE?: string }>({});
 
@@ -19,18 +28,147 @@ export default function App() {
   const [loginStatusIsError, setLoginStatusIsError] = useState(false);
   const [loginHint, setLoginHint] = useState('Sau khi đăng nhập thành công, access token sẽ được điền tự động vào tab Thông tin đăng ký.');
 
+  const [accessToken, setAccessToken] = useState('');
+  const [cookie, setCookie] = useState('');
   const [logs, setLogs] = useState<RegisterLogPayload[]>([]);
 
   const appendLog = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     setLogs((prev) => [...prev, { message, type }]);
   }, []);
 
+
   const updateLoginStatus = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     setLoginStatus(message);
     setLoginStatusIsError(type === 'error');
   }, []);
 
+  const applyCourseData = useCallback(
+    (data: CourseData, sourceLabel?: string, { showBanner = true }: { showBanner?: boolean } = {}) => {
+      if (!data) {
+        throw new Error('Dữ liệu trả về rỗng');
+      }
+      const { courseRows: rows, statusMessage } = buildCourseRows(data, sourceLabel);
+      setCourseRows(rows);
+      setLoaded(true);
+      setTableStatus(statusMessage);
+      setBannerData(showBanner ? data : null);
+    },
+    [],
+  );
 
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!window.electronAPI || !window.electronAPI.loadCourseData) {
+          throw new Error('Preload bridge chưa sẵn sàng.');
+        }
+        const data = await window.electronAPI.loadCourseData();
+        applyCourseData(data, 'dữ liệu mẫu | Hãy đăng nhập để lấy dữ liệu thật mới nhất', { showBanner: false });
+      } catch (error) {
+        setLoaded(false);
+        setTableStatus('Không thể tải dữ liệu học phần.');
+        appendLog(`Lỗi load dữ liệu mẫu: ${(error as Error).message}`, 'error');
+        console.error(error);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+  }, []);
+
+  const refreshCoursesFromApi = useCallback(
+    async (credentials: { ACCESS_TOKEN?: string; COOKIE?: string }, { silent = false }: { silent?: boolean } = {}) => {
+      if (!window.electronAPI || !window.electronAPI.refreshCourseData) {
+        appendLog('Preload bridge chưa hỗ trợ refreshCourseData.', 'error');
+        return;
+      }
+
+      if (!silent) {
+        setTableStatus('Đang tải danh sách môn học mới nhất từ hệ thống...');
+      }
+
+      try {
+        const result = await window.electronAPI.refreshCourseData(credentials);
+        if (result.success && result.data) {
+          applyCourseData(result.data, 'dữ liệu trực tiếp từ hệ thống');
+          appendLog('✅ Đã tải danh sách môn học mới nhất từ hệ thống.');
+        } else {
+          appendLog(`⚠️ Không tải được danh sách môn học mới: ${result.error || 'lỗi không xác định'}. Vẫn giữ dữ liệu hiện có.`, 'error');
+          if (result.data) {
+            applyCourseData(result.data, 'dữ liệu cũ | Refresh thất bại');
+          }
+        }
+      } catch (error) {
+        appendLog(`Lỗi khi refresh danh sách môn học: ${(error as Error).message}`, 'error');
+      }
+    },
+    [applyCourseData, appendLog],
+  );
+
+  // Filter
+  // Sắp xếp theo Tên môn học (có dấu, theo bảng chữ cái tiếng Việt), sau đó Mã MH
+  // và Nhóm tổ để các dòng cùng môn (khác nhóm/tổ/hệ) đứng cạnh nhau thay vì
+  // rải rác theo thứ tự gốc của mảng dữ liệu trả về từ API.
+  const collator = useMemo(() => new Intl.Collator('vi', { sensitivity: 'base', numeric: true }), []);
+
+  const visibleRows = useMemo(() => {
+    return courseRows.filter((row) => filterRow(row, filters))
+  }, [courseRows, filters, collator]);
+
+  const handleFilterChange = useCallback((field: keyof CourseFilters, value: string) => {
+    setFilters((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+  }, []);
+
+  const handleToggleRow = useCallback((idToHoc: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(idToHoc);
+      else next.delete(idToHoc);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      visibleRows.forEach((row) => next.add(row.id_to_hoc));
+      return next;
+    });
+  }, [visibleRows]);
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleHeadSelectAllChange = useCallback(
+    (checked: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        visibleRows.forEach((row) => {
+          if (checked) next.add(row.id_to_hoc);
+          else next.delete(row.id_to_hoc);
+        });
+        return next;
+      });
+    },
+    [visibleRows],
+  );
+
+  const headSelectAllChecked = visibleRows.length > 0 && visibleRows.every((row) => selectedIds.has(row.id_to_hoc));
+  const headSelectAllIndeterminate = visibleRows.some((row) => selectedIds.has(row.id_to_hoc)) && !headSelectAllChecked;
+
+  const selectionSummary = `Đã chọn ${selectedIds.size} học phần.`;
+
+  const handleRefreshClick = useCallback(async () => {
+    const creds = lastCredentials.current.ACCESS_TOKEN || lastCredentials.current.COOKIE
+      ? lastCredentials.current
+      : { ACCESS_TOKEN: accessToken.trim(), COOKIE: cookie.trim() };
+    setRefreshing(true);
+    await refreshCoursesFromApi(creds);
+    setRefreshing(false);
+  }, [accessToken, cookie, refreshCoursesFromApi]);
 
   const handleLogin = useCallback(async () => {
     const trimmedUsername = username.trim();
@@ -51,14 +189,10 @@ export default function App() {
         setLoginHint(result.message || '');
         if (result.accessToken) setAccessToken(result.accessToken);
         if (result.cookie) setCookie(result.cookie);
-        // Nếu main process trả về idRsInit từ payload CurrUser thì tự động điền
-        if (result.idRsInit) {
-          setIdRsInit(result.idRsInit);
-          setLoginHint('ID_RS_INIT đã được tự động điền từ thông tin đăng nhập.');
-        }
 
         lastCredentials.current = { ACCESS_TOKEN: result.accessToken, COOKIE: result.cookie };
         if (result.courseData) {
+          applyCourseData(result.courseData, 'dữ liệu trực tiếp từ hệ thống, ngay sau khi đăng nhập');
           appendLog('✅ Đã tự động tải danh sách môn học mới nhất sau khi đăng nhập.');
         } else if (result.courseFetchError) {
           appendLog(`⚠️ Đăng nhập thành công nhưng không tự tải được danh sách môn học: ${result.courseFetchError}. Thử bấm "Làm mới danh sách".`, 'error');
@@ -75,7 +209,7 @@ export default function App() {
     } finally {
       setLoggingIn(false);
     }
-  }, [username, password, appendLog, updateLoginStatus]);
+  }, [username, password, applyCourseData, appendLog, updateLoginStatus]);
 
   return (
     <div className="app">
@@ -90,6 +224,28 @@ export default function App() {
         <button className={`tab-button${activeTab === 'config' ? ' active' : ''}`} onClick={() => setActiveTab('config')}>Thông tin đăng ký</button>
       </div>
 
+      <RegistrationBanner data={bannerData} />
+
+      <SearchTab
+        active={activeTab === 'search'}
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onResetFilters={resetFilters}
+        onSelectAll={handleSelectAll}
+        onDeselectAll={handleDeselectAll}
+        onRefresh={handleRefreshClick}
+        refreshing={refreshing}
+        tableStatus={tableStatus}
+        selectionSummary={selectionSummary}
+        loaded={loaded}
+        visibleRows={visibleRows}
+        selectedIds={selectedIds}
+        onToggleRow={handleToggleRow}
+        headSelectAllChecked={headSelectAllChecked}
+        headSelectAllIndeterminate={headSelectAllIndeterminate}
+        onHeadSelectAllChange={handleHeadSelectAllChange}
+      />
+
       <LoginTab
         active={activeTab === 'login'}
         username={username}
@@ -102,6 +258,7 @@ export default function App() {
         loginStatusIsError={loginStatusIsError}
         loginHint={loginHint}
       />
+
     </div>
   );
 }
