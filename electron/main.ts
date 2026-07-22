@@ -143,10 +143,30 @@ function extractCurrUserFromText(text: string | null): string | null {
     return null;
   }
 
-
-  const regex = /CurrUser=([A-Za-z0-9_\-]+)/;
+  const regex = /CurrUser=([^"'&\s<]+)/;
   const match = text.match(regex);
   return match ? match[1] : null;
+}
+
+function parseCurrUserPayload(currUserRaw: string): Record<string, unknown> {
+  const normalized = currUserRaw.trim();
+  const decodedCurrUser = normalized.includes('%')
+    ? decodeURIComponent(normalized)
+    : normalized;
+  const decodedJsonText = Buffer.from(decodedCurrUser, 'base64url').toString('utf8');
+
+  try {
+    const parsed = JSON.parse(decodedJsonText);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Payload CurrUser không phải là object hợp lệ.');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      'Đăng nhập thất bại. Tài khoản hoặc mật khẩu không đúng.',
+      { cause: error },
+    );
+  }
 }
 
 ipcMain.handle('auth:login', async (_event: IpcMainInvokeEvent, credentials) => {
@@ -181,11 +201,22 @@ ipcMain.handle('auth:login', async (_event: IpcMainInvokeEvent, credentials) => 
     throw new Error('Không thể xác thực đăng nhập. Kiểm tra lại tài khoản/mật khẩu và thử lại.');
   }
 
-  const decoded = Buffer.from(currUserBase64, 'base64url').toString('utf8');
-  const parsed = JSON.parse(decoded);
-  const accessToken = parsed.access_token || parsed.accessToken || '';
-  // Thử truy xuất các key khả dụng chứa id_rs từ payload CurrUser
-  const idRsInit = parsed.id_rs || parsed.idRs || parsed.id_rs_init || parsed.rs || parsed.rs_id || parsed.idRsInit || null;
+  const parsed = parseCurrUserPayload(currUserBase64);
+  const accessToken = typeof parsed.access_token === 'string'
+    ? parsed.access_token
+    : (typeof parsed.accessToken === 'string' ? parsed.accessToken : '');
+  // Thử tìm các key chứa id_rs từ payload CurrUser
+  const idRsInit = typeof parsed.id_rs === 'string'
+    ? parsed.id_rs
+    : (typeof parsed.idRs === 'string'
+      ? parsed.idRs
+      : (typeof parsed.id_rs_init === 'string'
+        ? parsed.id_rs_init
+        : (typeof parsed.rs === 'string'
+          ? parsed.rs
+          : (typeof parsed.rs_id === 'string'
+            ? parsed.rs_id
+            : (typeof parsed.idRsInit === 'string' ? parsed.idRsInit : null)))));
   const cookieValues: string[] = [];
   response.headers.forEach((value, name) => {
     if (name.toLowerCase() === 'set-cookie') {
