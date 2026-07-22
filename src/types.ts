@@ -96,6 +96,6 @@ export interface ElectronAPI {
   loadCourseData: () => Promise<CourseData>;
   refreshCourseData: (credentials: RefreshCredentials) => Promise<RefreshResult>;
   performLogin: (credentials: LoginCredentials) => Promise<LoginResult>;
-  onLog: (callback: (payload: RegisterLogPayload) => void) => void;
-  onDone: (callback: (result: RegisterResult) => void) => void;
+  onLog: (callback: (payload: RegisterLogPayload) => void) => () => void;
+  onDone: (callback: (result: RegisterResult) => void) => () => void;
 }

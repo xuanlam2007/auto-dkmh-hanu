@@ -334,8 +334,11 @@ export default function App() {
   useEffect(() => {
     if (!window.electronAPI) return;
 
+    let offLog: (() => void) | undefined;
+    let offDone: (() => void) | undefined;
+
     if (typeof window.electronAPI.onLog === 'function') {
-      window.electronAPI.onLog(({ message, type }) => {
+      offLog = window.electronAPI.onLog(({ message, type }) => {
         appendLog(message, (type as 'info' | 'error') || 'info');
         if (type === 'error' && /token\/?cookie|phiên đăng nhập|đã hết hạn/i.test(message)) {
           updateStatus('Phiên đăng nhập có thể đã hết hạn. Mở tab Đăng nhập để thử lại.', 'error');
@@ -345,7 +348,7 @@ export default function App() {
     }
 
     if (typeof window.electronAPI.onDone === 'function') {
-      window.electronAPI.onDone((result) => {
+      offDone = window.electronAPI.onDone((result) => {
         appendLog(result.success ? 'Quá trình đã hoàn tất.' : 'Quá trình dừng lại với một số môn chưa đăng ký được.', result.success ? 'info' : 'error');
         updateStatus(result.success ? 'Hoàn tất' : 'Kết thúc với lỗi', result.success ? 'info' : 'error');
         setStarting(false);
@@ -353,6 +356,11 @@ export default function App() {
         setPauseCancelEnabled(false);
       });
     }
+
+    return () => {
+      offLog?.();
+      offDone?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
