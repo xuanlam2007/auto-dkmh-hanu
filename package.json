@@ -6,11 +6,25 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
+    "dist": "npm run build && electron-builder",
     "dev": "npm run copy:data-example && vite",
     "build": "tsc --noEmit && vite build && npm run copy:data-example",
     "copy:data-example": "node -e \"require('fs').cpSync('electron/data-example','dist-electron/data-example',{recursive:true})\"",
     "preview": "vite preview",
     "electron:dev": "vite build --mode development && electron ."
+  },
+  "build": {
+    "asar": true,
+    "appId": "me.xuanlam2007.autodkmh",
+    "productName": "Auto DKMH GUI",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   },
   "keywords": [],
   "author": "",
@@ -26,6 +40,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.5.3",
     "vite": "^5.4.1",
     "vite-plugin-electron": "^0.28.7",
