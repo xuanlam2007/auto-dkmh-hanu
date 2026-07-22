@@ -2,7 +2,7 @@ import type { CourseRow } from '../types';
 import type { CourseFilters } from '../utils/courseData';
 import LegendDetails from './LegendDetails';
 import FilterPanel from './FilterPanel';
-import CoursesTable from './CourseTable';
+import CoursesTable from './CoursesTable';
 
 interface SearchTabProps {
   active: boolean;
