@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CourseData, CourseRow, RegisterLogPayload } from './types';
+import type { CourseData, CourseRow, RegisterLogPayload, RegisterOptions } from './types';
 import { buildCourseRows, filterRow, type CourseFilters } from './utils/courseData';
 import SearchTab from './components/SearchTab';
 import LoginTab from './components/LoginTab';
+import ConfigTab from './components/ConfigTab';
 import RegistrationBanner from './components/RegistrationBanner';
 
 type TabName = 'search' | 'login' | 'config';
@@ -30,12 +31,25 @@ export default function App() {
 
   const [accessToken, setAccessToken] = useState('');
   const [cookie, setCookie] = useState('');
+  const [svNganh, setSvNganh] = useState('1');
+  const [idRsInit, setIdRsInit] = useState('');
+  const [retryInterval, setRetryInterval] = useState('1500');
+  const [maxAttempts, setMaxAttempts] = useState('500');
   const [logs, setLogs] = useState<RegisterLogPayload[]>([]);
+  const [runStatus, setRunStatus] = useState('Chưa chạy.');
+  const [runStatusIsError, setRunStatusIsError] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [pauseCancelEnabled, setPauseCancelEnabled] = useState(false);
 
   const appendLog = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     setLogs((prev) => [...prev, { message, type }]);
   }, []);
 
+  const updateStatus = useCallback((message: string, type: 'info' | 'error' = 'info') => {
+    setRunStatus(message);
+    setRunStatusIsError(type === 'error');
+  }, []);
 
   const updateLoginStatus = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     setLoginStatus(message);
@@ -56,6 +70,7 @@ export default function App() {
     [],
   );
 
+  // Tải dữ liệu mẫu ban đầu (data-example), tương đương loadInitialCourses() trong renderer.js cũ
   useEffect(() => {
     (async () => {
       try {
@@ -168,6 +183,20 @@ export default function App() {
   const headSelectAllChecked = visibleRows.length > 0 && visibleRows.every((row) => selectedIds.has(row.id_to_hoc));
   const headSelectAllIndeterminate = visibleRows.some((row) => selectedIds.has(row.id_to_hoc)) && !headSelectAllChecked;
 
+  // coursesPreview + selectionSummary: tương đương updateSelectionState() trong renderer.js
+  const coursesPreview = useMemo(
+    () =>
+      Array.from(selectedIds)
+        .map((idToHoc) => {
+          const row = courseRows.find((item) => item.id_to_hoc === idToHoc);
+          if (!row) return '';
+          const label = `${row.ma_mon}_${row.nhom_to}`;
+          return `${label}:${idToHoc}`;
+        })
+        .filter(Boolean)
+        .join(','),
+    [selectedIds, courseRows],
+  );
   const selectionSummary = `Đã chọn ${selectedIds.size} học phần.`;
 
   const handleRefreshClick = useCallback(async () => {
@@ -198,6 +227,11 @@ export default function App() {
         setLoginHint(result.message || '');
         if (result.accessToken) setAccessToken(result.accessToken);
         if (result.cookie) setCookie(result.cookie);
+        // Nếu main process trả về idRsInit từ payload CurrUser thì tự động điền
+        if (result.idRsInit) {
+          setIdRsInit(result.idRsInit);
+          setLoginHint('ID_RS_INIT đã được tự động điền từ thông tin đăng nhập.');
+        }
 
         lastCredentials.current = { ACCESS_TOKEN: result.accessToken, COOKIE: result.cookie };
         if (result.courseData) {
@@ -219,6 +253,108 @@ export default function App() {
       setLoggingIn(false);
     }
   }, [username, password, applyCourseData, appendLog, updateLoginStatus]);
+
+  const handleStart = useCallback(async () => {
+    const options: RegisterOptions = {
+      ACCESS_TOKEN: accessToken.trim(),
+      COOKIE: cookie.trim(),
+      COURSES: coursesPreview.trim(),
+      SV_NGANH: svNganh.trim() || '1',
+      ID_RS_INIT: idRsInit.trim(),
+      RETRY_INTERVAL_MS: retryInterval.trim() || '1500',
+      MAX_ATTEMPTS: maxAttempts.trim() || '500',
+    };
+
+    if (!options.COURSES) {
+      appendLog('Vui lòng chọn ít nhất một học phần trước khi bắt đầu.', 'error');
+      updateStatus('Lỗi: chưa chọn học phần.', 'error');
+      return;
+    }
+
+    if (!options.ACCESS_TOKEN || !options.COOKIE) {
+      appendLog('Vui lòng điền đầy đủ ACCESS_TOKEN và COOKIE trong tab Thông tin đăng ký. ID_RS_INIT có thể để trống (sẽ được lấy tự động khi server trả về).', 'error');
+      updateStatus('Lỗi: thiếu thông tin cấu hình.', 'error');
+      return;
+    }
+
+    setLogs([]);
+    setActiveTab('config');
+    updateStatus('Đang chạy...', 'info');
+    setStarting(true);
+    setPaused(false);
+    setPauseCancelEnabled(true);
+
+    try {
+      await window.electronAPI!.startRegistration(options);
+    } catch (error) {
+      appendLog((error as Error)?.message || 'Lỗi không xác định khi khởi động đăng ký.', 'error');
+      updateStatus('Lỗi khi chạy.', 'error');
+      setStarting(false);
+      setPauseCancelEnabled(false);
+      setPaused(false);
+    }
+  }, [accessToken, cookie, coursesPreview, svNganh, idRsInit, retryInterval, maxAttempts, appendLog, updateStatus]);
+
+  const handlePauseResume = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      if (paused) {
+        await window.electronAPI.resumeRegistration();
+        setPaused(false);
+        appendLog('▶️ Tiếp tục chạy đăng ký.');
+      } else {
+        await window.electronAPI.pauseRegistration();
+        setPaused(true);
+        appendLog('⏸️ Đã tạm dừng đăng ký.');
+      }
+    } catch (err) {
+      appendLog('Lỗi khi gửi yêu cầu tạm dừng/tiếp tục: ' + ((err as Error).message || err), 'error');
+    }
+  }, [paused, appendLog]);
+
+  const handleCancel = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.cancelRegistration();
+      appendLog('🛑 Đã gửi yêu cầu huỷ tiến trình đăng ký.');
+      updateStatus('Đã huỷ', 'error');
+      setStarting(false);
+      setPaused(false);
+      setPauseCancelEnabled(false);
+    } catch (err) {
+      appendLog('Lỗi khi huỷ: ' + ((err as Error).message || err), 'error');
+    }
+  }, [appendLog, updateStatus]);
+
+  const handleClearLogs = useCallback(() => {
+    setLogs([]);
+    updateStatus('Logs đã được xóa.', 'info');
+  }, [updateStatus]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    if (typeof window.electronAPI.onLog === 'function') {
+      window.electronAPI.onLog(({ message, type }) => {
+        appendLog(message, (type as 'info' | 'error') || 'info');
+        if (type === 'error' && /token\/?cookie|phiên đăng nhập|đã hết hạn/i.test(message)) {
+          updateStatus('Phiên đăng nhập có thể đã hết hạn. Mở tab Đăng nhập để thử lại.', 'error');
+          setActiveTab('login');
+        }
+      });
+    }
+
+    if (typeof window.electronAPI.onDone === 'function') {
+      window.electronAPI.onDone((result) => {
+        appendLog(result.success ? 'Quá trình đã hoàn tất.' : 'Quá trình dừng lại với một số môn chưa đăng ký được.', result.success ? 'info' : 'error');
+        updateStatus(result.success ? 'Hoàn tất' : 'Kết thúc với lỗi', result.success ? 'info' : 'error');
+        setStarting(false);
+        setPaused(false);
+        setPauseCancelEnabled(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="app">
@@ -268,6 +404,33 @@ export default function App() {
         loginHint={loginHint}
       />
 
+      <ConfigTab
+        active={activeTab === 'config'}
+        accessToken={accessToken}
+        cookie={cookie}
+        coursesPreview={coursesPreview}
+        svNganh={svNganh}
+        idRsInit={idRsInit}
+        retryInterval={retryInterval}
+        maxAttempts={maxAttempts}
+        onAccessTokenChange={setAccessToken}
+        onCookieChange={setCookie}
+        onSvNganhChange={setSvNganh}
+        onIdRsInitChange={setIdRsInit}
+        onRetryIntervalChange={setRetryInterval}
+        onMaxAttemptsChange={setMaxAttempts}
+        onStart={handleStart}
+        onPauseResume={handlePauseResume}
+        onCancel={handleCancel}
+        onClearLogs={handleClearLogs}
+        starting={starting}
+        paused={paused}
+        pauseCancelEnabled={pauseCancelEnabled}
+        runStatus={runStatus}
+        runStatusIsError={runStatusIsError}
+        previewSummary={selectionSummary}
+        logs={logs}
+      />
     </div>
   );
 }
