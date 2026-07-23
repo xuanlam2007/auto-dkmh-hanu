@@ -176,7 +176,7 @@ ipcMain.handle('auth:login', async (_event: IpcMainInvokeEvent, credentials) => 
     throw new Error('Chưa nhập tài khoản hoặc mật khẩu.');
   }
   const loginPayload = JSON.stringify({ username, password, uri: 'https://qldt.hanu.edu.vn/#/' });
-  const code = Buffer.from(loginPayload, 'utf8').toString('base64url');
+  const code = Buffer.from(loginPayload, 'utf8').toString('base64');
   const signinUrl = `https://qldt.hanu.edu.vn/api/pn-signin?code=${encodeURIComponent(code)}&gopage=&mgr=1`;
   const response = await fetch(signinUrl, {
     method: 'GET',
